@@ -96,7 +96,7 @@ export const TOOLS: ToolDef[] = [
     name: 'Remove objects',
     tagline: 'Brush away people, text, blemishes',
     description:
-      'Paint over anything unwanted and content-aware fill rebuilds the background from the surrounding pixels.',
+      'Paint over anything unwanted and the background is rebuilt from its surroundings, with a fast pattern-matching fill or an on-device AI model.',
     icon: Wand2,
     tint: 'bg-teal-100 text-teal-700',
   },
@@ -106,7 +106,7 @@ export const TOOLS: ToolDef[] = [
     name: 'Edit EXIF & GPS',
     tagline: 'View, strip or rewrite metadata',
     description:
-      'See what your JPG reveals: location, camera, date. Remove it all or replace it with your own values, without re-encoding.',
+      'See what your photo reveals: location, camera, date. Remove it all or replace it with your own values. JPG, PNG and WebP are edited in place without re-encoding.',
     icon: MapPinOff,
     tint: 'bg-slate-200 text-slate-700',
   },

@@ -8,7 +8,7 @@ export default defineConfig({
     format: 'es',
   },
   optimizeDeps: {
-    // Pre-bundling this package breaks its internal asset resolution.
-    exclude: ['@imgly/background-removal'],
+    // Pre-bundling these breaks their internal wasm/asset resolution via import.meta.url.
+    exclude: ['@imgly/background-removal', 'onnxruntime-web'],
   },
 })

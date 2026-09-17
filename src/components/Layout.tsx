@@ -1,8 +1,25 @@
-import { ShieldCheck } from 'lucide-react'
+import { ChevronDown, ShieldCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { TOOLS } from '../lib/tools'
 import { cx } from './ui'
+
+/** Tools shown as text links in the header; the rest live under "More". */
+const MAIN_LINKS = ['compress', 'resize', 'aspect', 'convert', 'beautify', 'remove-objects']
+const NAV_LABELS: Record<string, string> = {
+  compress: 'Compress',
+  resize: 'Resize',
+  aspect: 'Crop & ratio',
+  convert: 'Convert',
+  beautify: 'Beautify',
+  'remove-objects': 'Remove objects',
+}
+
+const navClass = ({ isActive }: { isActive: boolean }) =>
+  cx(
+    'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+    isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+  )
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
@@ -16,25 +33,32 @@ export function Layout({ children }: { children: ReactNode }) {
             </span>
           </Link>
           <nav className="hidden items-center gap-0.5 lg:flex">
-            {TOOLS.map((t) => {
-              const Icon = t.icon
-              return (
-                <NavLink
-                  key={t.id}
-                  to={t.path}
-                  title={t.name}
-                  className={({ isActive }) =>
-                    cx(
-                      'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
-                      isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="hidden 2xl:inline">{t.name}</span>
-                </NavLink>
-              )
-            })}
+            {TOOLS.filter((t) => MAIN_LINKS.includes(t.id)).map((t) => (
+              <NavLink key={t.id} to={t.path} className={navClass}>
+                {NAV_LABELS[t.id] ?? t.name}
+              </NavLink>
+            ))}
+            <details className="group relative">
+              <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
+                More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="absolute left-0 top-full z-40 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                {TOOLS.filter((t) => !MAIN_LINKS.includes(t.id)).map((t) => (
+                  <NavLink
+                    key={t.id}
+                    to={t.path}
+                    className={({ isActive }) =>
+                      cx(
+                        'block rounded-lg px-3 py-2 text-sm',
+                        isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-slate-700 hover:bg-slate-100',
+                      )
+                    }
+                  >
+                    {t.name}
+                  </NavLink>
+                ))}
+              </div>
+            </details>
           </nav>
           <div className="ml-auto flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
             <ShieldCheck className="h-3.5 w-3.5" />

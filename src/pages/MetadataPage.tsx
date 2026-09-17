@@ -1,17 +1,25 @@
-import { MapPin, ShieldCheck } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { MapPin, RefreshCw, ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { FileGrid } from '../components/FileGrid'
 import { ToolShell, useImageFiles } from '../components/ToolShell'
 import { Button, Field, Notice, SectionTitle, Segmented, TextInput, Toggle } from '../components/ui'
-import { EMPTY_FORM, formFromParsed, parseExif, rewriteJpeg, type ExifForm, type ParsedExif } from '../lib/exif'
-import { withExt } from '../lib/format'
+import {
+  EDITABLE_TYPES,
+  EMPTY_FORM,
+  formFromParsed,
+  parseExif,
+  rewriteMetadata,
+  type ExifForm,
+  type ParsedExif,
+} from '../lib/exif'
+import { labelForMime, withExt } from '../lib/format'
 import { processImage } from '../lib/process'
 import { toolById } from '../lib/tools'
 import type { LoadedFile, ProcessResult } from '../lib/types'
 
 const tool = toolById('metadata')
 
-type Mode = 'strip' | 'replace'
+type Mode = 'edit' | 'strip'
 
 const FIELDS: { key: keyof ExifForm; label: string; placeholder?: string }[] = [
   { key: 'description', label: 'Description', placeholder: 'What the photo shows' },
@@ -23,19 +31,25 @@ const FIELDS: { key: keyof ExifForm; label: string; placeholder?: string }[] = [
   { key: 'software', label: 'Software', placeholder: 'ihateimage' },
 ]
 
+function sameForm(a: ExifForm, b: ExifForm) {
+  return (Object.keys(a) as (keyof ExifForm)[]).every((k) => a[k] === b[k])
+}
+
 export function MetadataPage() {
   const files = useImageFiles()
-  const [mode, setMode] = useState<Mode>('strip')
+  const [mode, setMode] = useState<Mode>('edit')
   const [form, setForm] = useState<ExifForm>(EMPTY_FORM)
   const [keepIcc, setKeepIcc] = useState(true)
   const [stripOther, setStripOther] = useState(true)
   const [parsed, setParsed] = useState<ParsedExif | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
-  const [prefilledFor, setPrefilledFor] = useState<string | null>(null)
+  /** What the form looked like right after the last prefill, to detect user edits. */
+  const prefilled = useRef<ExifForm>(EMPTY_FORM)
 
   const selected = files.selected
+  const dirty = !sameForm(form, prefilled.current)
 
-  // Read the selected file's metadata for the inspector panel.
+  // Read the selected file's metadata. Prefill the form from it unless the user has already typed.
   useEffect(() => {
     if (!selected) {
       setParsed(null)
@@ -43,18 +57,14 @@ export function MetadataPage() {
     }
     let cancelled = false
     setParseError(null)
-    if (selected.type !== 'image/jpeg') {
-      setParsed(null)
-      return
-    }
     parseExif(selected.file)
       .then((p) => {
         if (cancelled) return
         setParsed(p)
-        // Prefill the form once per image so users edit rather than retype.
-        if (prefilledFor !== selected.id && isEmpty(form)) {
-          setForm(formFromParsed(p))
-          setPrefilledFor(selected.id)
+        if (!dirty) {
+          const next = formFromParsed(p)
+          prefilled.current = next
+          setForm(next)
         }
       })
       .catch((e) => !cancelled && setParseError(e instanceof Error ? e.message : String(e)))
@@ -64,19 +74,32 @@ export function MetadataPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id])
 
-  const nonJpeg = files.files.filter((f) => f.type !== 'image/jpeg')
+  const loadFromImage = () => {
+    if (!parsed) return
+    const next = formFromParsed(parsed)
+    prefilled.current = next
+    setForm(next)
+  }
+
+  const unsupported = files.files.filter((f) => !EDITABLE_TYPES.has(f.type))
 
   const process = async (file: LoadedFile): Promise<ProcessResult> => {
     let source: Blob = file.file
     let note: string | undefined
-    if (file.type !== 'image/jpeg') {
-      // EXIF lives in JPEGs; re-encode other formats first (this already drops their metadata).
+    let outType = file.type
+    if (!EDITABLE_TYPES.has(file.type)) {
       const res = await processImage({ source: file.file, ops: [], encode: { format: 'image/jpeg', quality: 0.95 } })
       source = res.blob
+      outType = 'image/jpeg'
       note = 'Converted to JPG'
     }
-    const blob = await rewriteJpeg(source, { form: mode === 'replace' ? form : null, keepIcc, stripOther })
-    return { blob, name: withExt(file.name, 'image/jpeg'), width: file.width, height: file.height, note }
+    const blob = await rewriteMetadata(source, {
+      form: mode === 'edit' ? form : null,
+      keepIcc,
+      stripOther,
+      size: { width: file.width, height: file.height },
+    })
+    return { blob, name: withExt(file.name, outType), width: file.width, height: file.height, note }
   }
 
   const set = (key: keyof ExifForm, value: string) => setForm((f) => ({ ...f, [key]: value }))
@@ -85,7 +108,7 @@ export function MetadataPage() {
     <ToolShell
       tool={tool}
       files={files}
-      processLabel={mode === 'strip' ? 'Remove metadata from' : 'Write metadata to'}
+      processLabel={mode === 'strip' ? 'Remove metadata from' : 'Save metadata to'}
       process={process}
       zipName="ihateimage-metadata"
       preview={
@@ -106,21 +129,28 @@ export function MetadataPage() {
               value={mode}
               onChange={setMode}
               options={[
+                { value: 'edit', label: 'Edit' },
                 { value: 'strip', label: 'Remove all' },
-                { value: 'replace', label: 'Replace' },
               ]}
             />
             <p className="text-xs text-slate-500">
               {mode === 'strip'
                 ? 'Deletes EXIF (camera, dates, GPS), embedded thumbnails and other metadata. Pixels are untouched.'
-                : 'Writes exactly the fields below and nothing else. Leave a field blank to omit it.'}
+                : 'The fields are prefilled from the selected image. Change what you like, clear a field to drop it. Only these fields are written.'}
             </p>
           </div>
 
-          {mode === 'replace' && (
+          {mode === 'edit' && (
             <>
               <div className="space-y-2.5">
-                <SectionTitle>Details</SectionTitle>
+                <div className="flex items-center justify-between">
+                  <SectionTitle>Details</SectionTitle>
+                  {dirty && parsed && (
+                    <Button variant="ghost" size="sm" onClick={loadFromImage} title="Discard edits and reload this image's values">
+                      <RefreshCw className="h-3.5 w-3.5" /> Reload from image
+                    </Button>
+                  )}
+                </div>
                 {FIELDS.map((f) => (
                   <Field key={f.key} label={f.label}>
                     <TextInput value={form[f.key]} placeholder={f.placeholder} onChange={(e) => set(f.key, e.target.value)} />
@@ -139,7 +169,7 @@ export function MetadataPage() {
                     onClick={() => setForm((f) => ({ ...f, lat: '', lon: '', alt: '' }))}
                     disabled={!form.lat && !form.lon}
                   >
-                    Clear
+                    Remove location
                   </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -177,20 +207,17 @@ export function MetadataPage() {
             />
           </div>
 
-          {nonJpeg.length > 0 && (
+          {unsupported.length > 0 && (
             <Notice tone="info">
-              {nonJpeg.length === 1 ? '1 file is' : `${nonJpeg.length} files are`} not JPG. They will be converted to JPG
-              (quality 95) so metadata can be written.
+              {unsupported.length === 1 ? '1 file is' : `${unsupported.length} files are`} not JPG, PNG or WebP (
+              {Array.from(new Set(unsupported.map((f) => labelForMime(f.type)))).join(', ')}). They will be converted to
+              JPG at quality 95 so metadata can be written.
             </Notice>
           )}
         </>
       }
     />
   )
-}
-
-function isEmpty(f: ExifForm) {
-  return Object.values(f).every((v) => !v)
 }
 
 function Inspector({ file, parsed, error }: { file: LoadedFile; parsed: ParsedExif | null; error: string | null }) {
@@ -200,30 +227,37 @@ function Inspector({ file, parsed, error }: { file: LoadedFile; parsed: ParsedEx
     { title: 'General', ifd: 'ifd0' },
   ]
   const hasAny = parsed && parsed.entries.length > 0
+  const editable = EDITABLE_TYPES.has(file.type)
   return (
     <div className="grid gap-4 md:grid-cols-[220px_1fr]">
       <div className="checker overflow-hidden rounded-xl">
         <img src={file.url} alt={file.name} className="h-full max-h-64 w-full object-contain" />
       </div>
       <div className="rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-          <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-2.5">
+          <p className="truncate text-sm font-medium text-slate-800">
+            {file.name} <span className="font-normal text-slate-400">· {labelForMime(file.type)}</span>
+          </p>
           {parsed?.gps ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
               <MapPin className="h-3 w-3" /> Contains GPS location
             </span>
           ) : hasAny ? (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Has metadata</span>
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+              Has metadata
+            </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
               <ShieldCheck className="h-3 w-3" /> No EXIF found
             </span>
           )}
         </div>
         <div className="max-h-72 overflow-y-auto px-4 py-3 text-sm">
           {error && <p className="text-red-700">{error}</p>}
-          {file.type !== 'image/jpeg' && (
-            <p className="text-slate-500">Only JPG metadata is inspected. This file will be converted to JPG on save.</p>
+          {!editable && (
+            <p className="mb-2 text-slate-500">
+              {labelForMime(file.type)} metadata can't be edited in place. The image will be saved as JPG with your values.
+            </p>
           )}
           {parsed?.gps && (
             <p className="mb-3 text-slate-700">
@@ -256,8 +290,11 @@ function Inspector({ file, parsed, error }: { file: LoadedFile; parsed: ParsedEx
               </div>
             )
           })}
+          {parsed && !hasAny && editable && (
+            <p className="text-slate-500">This image carries no EXIF block. You can still add one with the form.</p>
+          )}
           {parsed && parsed.segments.length > 0 && (
-            <p className="text-xs text-slate-500">Other segments: {parsed.segments.join(', ')}</p>
+            <p className="text-xs text-slate-500">Other metadata present: {parsed.segments.join(', ')}</p>
           )}
         </div>
       </div>

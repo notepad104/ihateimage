@@ -1,9 +1,10 @@
-import { Brush, Download, Eraser, Eye, Loader2, RotateCcw, Trash2, Undo2, Wand2 } from 'lucide-react'
+import { Brush, Download, Eraser, Eye, Loader2, RotateCcw, Sparkles, Trash2, Undo2, Wand2, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { DropZone } from '../components/DropZone'
 import { FormatPicker, useEncodeSupport, type FormatChoice } from '../components/FormatPicker'
 import { MaskEditor, type MaskEditorHandle, type Stroke } from '../components/MaskEditor'
 import { Button, Field, Notice, SectionTitle, Segmented, Slider } from '../components/ui'
+import { aiInpaint, blobToImageData, imageDataToBlob, isModelCached, MODEL_SIZE_LABEL } from '../lib/aiInpaint'
 import { downloadBlob } from '../lib/download'
 import { loadFiles } from '../lib/files'
 import { formatBytes, withExt } from '../lib/format'
@@ -21,6 +22,8 @@ interface Source {
   height: number
 }
 
+type Method = 'ai' | 'fast'
+
 export function RemoveObjectsPage() {
   const support = useEncodeSupport()
   const editor = useRef<MaskEditorHandle>(null)
@@ -30,11 +33,18 @@ export function RemoveObjectsPage() {
   const [strokes, setStrokes] = useState<Stroke[]>([])
   const [brush, setBrush] = useState(40)
   const [mode, setMode] = useState<'paint' | 'erase'>('paint')
+  const [method, setMethod] = useState<Method>('ai')
+  const [modelCached, setModelCached] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [comparing, setComparing] = useState(false)
   const [format, setFormat] = useState<FormatChoice>('same')
   const [quality, setQuality] = useState(92)
+
+  useEffect(() => {
+    void isModelCached().then(setModelCached)
+  }, [])
 
   // Revoke object URLs on unmount.
   useEffect(
@@ -63,24 +73,41 @@ export function RemoveObjectsPage() {
     if (!source) return
     const mask = editor.current?.getMask()
     if (!mask) {
-      setError('Paint over the object you want to remove first.')
+      setError('Mark the object you want to remove first.')
       return
     }
     setError(null)
     setBusy(true)
     try {
-      const res = await processImage({
-        source: source.blob,
-        ops: [{ type: 'inpaint', mask, width: source.width, height: source.height }],
-        encode: { format: 'image/png' },
-      })
+      let blob: Blob
+      if (method === 'ai') {
+        setStatus('Reading image…')
+        const img = await blobToImageData(source.blob)
+        const out = await aiInpaint(img, mask, (frac, stage) => {
+          if (stage === 'download') setStatus(`Downloading AI model ${Math.round(frac * 100)}% (once, ${MODEL_SIZE_LABEL})…`)
+          else if (stage === 'load') setStatus('Starting AI model…')
+          else setStatus('Reconstructing background…')
+        })
+        setModelCached(true)
+        setStatus('Encoding…')
+        blob = await imageDataToBlob(out)
+      } else {
+        setStatus('Matching surrounding patterns…')
+        const res = await processImage({
+          source: source.blob,
+          ops: [{ type: 'inpaint', mask, width: source.width, height: source.height }],
+          encode: { format: 'image/png' },
+        })
+        blob = res.blob
+      }
       setHistory((h) => [...h, source])
-      setSource({ blob: res.blob, url: URL.createObjectURL(res.blob), width: res.width, height: res.height })
+      setSource({ blob, url: URL.createObjectURL(blob), width: source.width, height: source.height })
       setStrokes([])
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
+      setStatus(null)
     }
   }
 
@@ -183,7 +210,7 @@ export function RemoveObjectsPage() {
           <aside className="lg:sticky lg:top-20 lg:self-start">
             <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="space-y-3">
-                <SectionTitle>Brush</SectionTitle>
+                <SectionTitle>1 · Mark the object</SectionTitle>
                 <Segmented
                   value={mode}
                   onChange={setMode}
@@ -192,21 +219,28 @@ export function RemoveObjectsPage() {
                       value: 'paint',
                       label: (
                         <span className="inline-flex items-center gap-1.5">
-                          <Brush className="h-3.5 w-3.5" /> Paint
+                          <Brush className="h-3.5 w-3.5" /> Mark
                         </span>
                       ),
+                      title: 'Paint red over what you want removed',
                     },
                     {
                       value: 'erase',
                       label: (
                         <span className="inline-flex items-center gap-1.5">
-                          <Eraser className="h-3.5 w-3.5" /> Erase
+                          <Eraser className="h-3.5 w-3.5" /> Unmark
                         </span>
                       ),
+                      title: 'Rub out part of your red marking',
                     },
                   ]}
                 />
-                <Field label="Size">
+                <p className="text-xs text-slate-500">
+                  {mode === 'paint'
+                    ? 'Paint red over the object and its shadow. Cover it generously.'
+                    : 'Unmark only removes your red marking. It does not change the photo.'}
+                </p>
+                <Field label="Brush size">
                   <Slider
                     value={brush}
                     onChange={setBrush}
@@ -215,16 +249,46 @@ export function RemoveObjectsPage() {
                     format={(v) => `${v}px`}
                   />
                 </Field>
+              </div>
+
+              <div className="space-y-3">
+                <SectionTitle>2 · Fill method</SectionTitle>
+                <Segmented
+                  value={method}
+                  onChange={setMethod}
+                  options={[
+                    {
+                      value: 'ai',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Sparkles className="h-3.5 w-3.5" /> AI
+                        </span>
+                      ),
+                    },
+                    {
+                      value: 'fast',
+                      label: (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Zap className="h-3.5 w-3.5" /> Fast
+                        </span>
+                      ),
+                    },
+                  ]}
+                />
                 <p className="text-xs text-slate-500">
-                  Paint generously over the object and its shadow. Small, isolated objects on simple backgrounds give
-                  the cleanest results.
+                  {method === 'ai'
+                    ? `A neural network (MI-GAN) invents plausible background from the surroundings. Best for complex scenes. ${
+                        modelCached ? 'Model is already downloaded.' : `Downloads a ${MODEL_SIZE_LABEL} model once; runs on your device.`
+                      }`
+                    : 'Copies matching patches from nearby pixels. Instant, works offline, great for textures and small blemishes.'}
                 </p>
               </div>
 
               <Button size="lg" className="w-full" onClick={remove} disabled={busy || strokes.length === 0}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                {busy ? 'Filling…' : 'Remove painted area'}
+                {busy ? 'Working…' : 'Remove marked area'}
               </Button>
+              {busy && status && <p className="-mt-3 text-center text-xs text-slate-500">{status}</p>}
 
               {history.length > 0 && (
                 <Button variant="secondary" size="sm" className="w-full" onClick={undoRemoval} disabled={busy}>
@@ -233,7 +297,7 @@ export function RemoveObjectsPage() {
               )}
 
               <div className="space-y-3 border-t border-slate-200 pt-4">
-                <SectionTitle>Save</SectionTitle>
+                <SectionTitle>3 · Save</SectionTitle>
                 <FormatPicker value={format} onChange={setFormat} support={support} />
                 {outputFormatFor(file, format, support) !== 'image/png' && (
                   <Field label="Quality">

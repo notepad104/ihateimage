@@ -8,6 +8,10 @@
     "skipLibCheck": true,
 
     "moduleResolution": "bundler",
+    /* onnxruntime-web's package.json "exports" hides its types from bundler resolution. */
+    "paths": {
+      "onnxruntime-web": ["./node_modules/onnxruntime-web/types.d.ts"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
