@@ -189,7 +189,7 @@ export function AspectRatioPage() {
             <div className="space-y-3">
               <SectionTitle>Keep which part</SectionTitle>
               <div className="flex items-center gap-4">
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid shrink-0 grid-cols-3 gap-1">
                   {GRAVITIES.map((g) => (
                     <button
                       key={g}
