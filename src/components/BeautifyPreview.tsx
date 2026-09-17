@@ -6,6 +6,7 @@ import type { LoadedFile, Op } from '../lib/types'
 import { cx } from './ui'
 
 const PREVIEW_MAX = 1400
+let keySeq = 0
 
 export function opsFor(params: AdjustParams): Op[] {
   return isIdentity(params) ? [] : [{ type: 'adjust', params }]
@@ -42,7 +43,8 @@ export function BeautifyPreview({
   useEffect(() => {
     let cancelled = false
     const worker = getPreviewWorker()
-    const key = file.id
+    // Unique per effect run: StrictMode mounts twice and the first cleanup must not evict the second run's source.
+    const key = `${file.id}-${++keySeq}`
     fileKey.current = key
     setReady(false)
     setError(null)
@@ -73,9 +75,10 @@ export function BeautifyPreview({
     const run = async (p: AdjustParams) => {
       inFlight.current = true
       setRendering(true)
+      const key = fileKey.current
       try {
-        const bmp = await getPreviewWorker().render(fileKey.current, opsFor(p))
-        if (fileKey.current === file.id) draw(liveRef.current, bmp, true)
+        const bmp = await getPreviewWorker().render(key, opsFor(p))
+        if (fileKey.current === key) draw(liveRef.current, bmp, true)
         else bmp.close()
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
@@ -196,7 +199,7 @@ export function PresetStrip({
   useEffect(() => {
     let cancelled = false
     const worker = getPreviewWorker()
-    const key = `${file.id}-thumb`
+    const key = `${file.id}-thumb-${++keySeq}`
     ;(async () => {
       try {
         await worker.cache(key, file.file, 160)
@@ -213,8 +216,8 @@ export function PresetStrip({
           bmp.close()
         }
         if (!cancelled) setVersion((v) => v + 1)
-      } catch {
-        /* thumbnails are best-effort */
+      } catch (e) {
+        console.warn('Preset thumbnails failed', e)
       } finally {
         worker.evict(key)
       }

@@ -2,7 +2,7 @@ import { MapPin, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { FileGrid } from '../components/FileGrid'
 import { ToolShell, useImageFiles } from '../components/ToolShell'
-import { Button, Field, Notice, SectionTitle, Segmented, TextInput, Toggle } from '../components/ui'
+import { Button, Field, Notice, NumberInput, SectionTitle, Segmented, Slider, TextInput, Toggle } from '../components/ui'
 import {
   EDITABLE_TYPES,
   EMPTY_FORM,
@@ -13,13 +13,17 @@ import {
   type ParsedExif,
 } from '../lib/exif'
 import { labelForMime, withExt } from '../lib/format'
+import { resolveResize } from '../lib/geometry'
 import { processImage } from '../lib/process'
 import { toolById } from '../lib/tools'
-import type { LoadedFile, ProcessResult } from '../lib/types'
+import type { LoadedFile, Op, ProcessResult } from '../lib/types'
+import { flattenOps } from './shared'
 
 const tool = toolById('metadata')
 
 type Mode = 'edit' | 'strip'
+type Editable = 'image/jpeg' | 'image/png' | 'image/webp'
+type OutChoice = 'same' | Editable
 
 const FIELDS: { key: keyof ExifForm; label: string; placeholder?: string }[] = [
   { key: 'description', label: 'Description', placeholder: 'What the photo shows' },
@@ -45,6 +49,19 @@ export function MetadataPage() {
   const [parseError, setParseError] = useState<string | null>(null)
   /** What the form looked like right after the last prefill, to detect user edits. */
   const prefilled = useRef<ExifForm>(EMPTY_FORM)
+
+  // Output options, shown on the results page. Changing them re-runs the batch.
+  const [outChoice, setOutChoice] = useState<OutChoice>('same')
+  const [reencode, setReencode] = useState(false)
+  const [quality, setQuality] = useState(85)
+  const [limitDims, setLimitDims] = useState(false)
+  const [maxSide, setMaxSide] = useState<number | ''>(2048)
+  const [rerunTick, setRerunTick] = useState(0)
+  const rerunRef = useRef<(() => void) | null>(null)
+  useEffect(() => {
+    if (rerunTick > 0) rerunRef.current?.()
+  }, [rerunTick])
+  const queueRerun = () => setRerunTick((t) => t + 1)
 
   const selected = files.selected
   const dirty = !sameForm(form, prefilled.current)
@@ -84,22 +101,39 @@ export function MetadataPage() {
   const unsupported = files.files.filter((f) => !EDITABLE_TYPES.has(f.type))
 
   const process = async (file: LoadedFile): Promise<ProcessResult> => {
+    const nativeOk = EDITABLE_TYPES.has(file.type)
+    const target: Editable = outChoice === 'same' ? (nativeOk ? (file.type as Editable) : 'image/jpeg') : outChoice
+    const needsResize = reencode && limitDims && !!maxSide && (file.width > maxSide || file.height > maxSide)
+    const mustReencode = target !== file.type || reencode || !nativeOk
+
     let source: Blob = file.file
+    let width = file.width
+    let height = file.height
     let note: string | undefined
-    let outType = file.type
-    if (!EDITABLE_TYPES.has(file.type)) {
-      const res = await processImage({ source: file.file, ops: [], encode: { format: 'image/jpeg', quality: 0.95 } })
+    if (mustReencode) {
+      // Re-encoding drops all metadata, so it happens first and the EXIF block is written afterwards.
+      const ops: Op[] = []
+      if (needsResize && maxSide) {
+        ops.push({ type: 'resize', ...resolveResize(file, { mode: 'fit', width: maxSide, height: maxSide, noEnlarge: true }) })
+      }
+      ops.push(...flattenOps(file, target, '#ffffff'))
+      const res = await processImage({
+        source: file.file,
+        ops,
+        encode: { format: target, quality: reencode ? quality / 100 : 0.95 },
+      })
       source = res.blob
-      outType = 'image/jpeg'
-      note = 'Converted to JPG'
+      width = res.width
+      height = res.height
+      note = target !== file.type ? `Converted to ${labelForMime(target)}` : 'Re-encoded'
     }
     const blob = await rewriteMetadata(source, {
       form: mode === 'edit' ? form : null,
       keepIcc,
       stripOther,
-      size: { width: file.width, height: file.height },
+      size: { width, height },
     })
-    return { blob, name: withExt(file.name, outType), width: file.width, height: file.height, note }
+    return { blob, name: withExt(file.name, target), width, height, note }
   }
 
   const set = (key: keyof ExifForm, value: string) => setForm((f) => ({ ...f, [key]: value }))
@@ -111,6 +145,75 @@ export function MetadataPage() {
       processLabel={mode === 'strip' ? 'Remove metadata from' : 'Save metadata to'}
       process={process}
       zipName="ihateimage-metadata"
+      resultsPanel={({ rerun, busy }) => {
+        rerunRef.current = rerun
+        return (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <SectionTitle>Output format</SectionTitle>
+              <Segmented<OutChoice>
+                value={outChoice}
+                onChange={(v) => {
+                  setOutChoice(v)
+                  queueRerun()
+                }}
+                options={[
+                  { value: 'same', label: 'Same', disabled: busy },
+                  { value: 'image/jpeg', label: 'JPG', disabled: busy },
+                  { value: 'image/png', label: 'PNG', disabled: busy },
+                  { value: 'image/webp', label: 'WebP', disabled: busy },
+                ]}
+              />
+              <p className="text-xs text-slate-500">
+                {outChoice === 'same'
+                  ? 'Kept as-is. JPG, PNG and WebP are edited in place; other types become JPG.'
+                  : 'Pixels are re-encoded to the new type, then your metadata is written into it.'}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Toggle
+                checked={reencode}
+                onChange={(v) => {
+                  setReencode(v)
+                  queueRerun()
+                }}
+                disabled={busy}
+                label="Compress"
+                hint="Re-encodes the pixels for a smaller file. Metadata is added afterwards, so nothing is lost."
+              />
+              {reencode && (
+                <>
+                  <Field label="Quality" hint={outChoice === 'image/png' ? 'PNG is lossless; quality has no effect.' : undefined}>
+                    <Slider
+                      value={quality}
+                      onChange={setQuality}
+                      onCommit={() => queueRerun()}
+                      min={1}
+                      max={100}
+                      format={(v) => `${v}%`}
+                      disabled={busy}
+                    />
+                  </Field>
+                  <Toggle
+                    checked={limitDims}
+                    onChange={(v) => {
+                      setLimitDims(v)
+                      queueRerun()
+                    }}
+                    disabled={busy}
+                    label="Limit longest side"
+                  />
+                  {limitDims && (
+                    <div onBlur={() => queueRerun()}>
+                      <NumberInput value={maxSide} onChange={setMaxSide} min={16} step={10} suffix="px" disabled={busy} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )
+      }}
       preview={
         selected && (
           <div className="space-y-4">

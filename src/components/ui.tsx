@@ -117,6 +117,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 export function Slider({
   value,
   onChange,
+  onCommit,
   min = 0,
   max = 100,
   step = 1,
@@ -125,6 +126,8 @@ export function Slider({
 }: {
   value: number
   onChange: (v: number) => void
+  /** Fires when the user lets go of the handle (pointer up / key up). */
+  onCommit?: (v: number) => void
   min?: number
   max?: number
   step?: number
@@ -142,6 +145,8 @@ export function Slider({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
+        onPointerUp={(e) => onCommit?.(Number((e.target as HTMLInputElement).value))}
+        onKeyUp={(e) => onCommit?.(Number((e.target as HTMLInputElement).value))}
       />
       <span className="w-12 shrink-0 text-right text-sm tabular-nums text-slate-700">
         {format ? format(value) : value}

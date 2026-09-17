@@ -87,6 +87,11 @@ export interface ToolShellProps {
   onReset?: () => void
   /** Extra line shown while processing (e.g. "Downloading model…"). */
   statusText?: ReactNode
+  /**
+   * Optional controls shown on the results page. Call `rerun` to re-process
+   * every file with the current options (e.g. after changing output format).
+   */
+  resultsPanel?: (ctx: { rerun: () => void; busy: boolean }) => ReactNode
 }
 
 type Stage = 'ready' | 'processing' | 'done'
@@ -104,6 +109,7 @@ export function ToolShell({
   multiple = true,
   onReset,
   statusText,
+  resultsPanel,
 }: ToolShellProps) {
   const [stage, setStage] = useState<Stage>('ready')
   const [jobs, setJobs] = useState<Record<string, JobState>>({})
@@ -265,7 +271,8 @@ export function ToolShell({
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
             {stage === 'processing' ? (
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
@@ -314,6 +321,12 @@ export function ToolShell({
                 {results.length > 1 ? 'Download all (ZIP)' : 'Download'}
               </Button>
             </div>
+          </div>
+          {resultsPanel && (
+            <div className="mt-4 border-t border-slate-200 pt-4">
+              {resultsPanel({ rerun: () => void run(), busy: stage === 'processing' })}
+            </div>
+          )}
           </div>
           <ResultList files={files.files} jobs={jobs} />
           {stage === 'done' && (
