@@ -1,3 +1,5 @@
+import type { AdjustParams } from './adjust'
+
 export type OutputFormat = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/avif'
 
 /**
@@ -12,6 +14,9 @@ export type Op =
   | { type: 'rotate'; degrees: 90 | 180 | 270 }
   | { type: 'flip'; horizontal: boolean; vertical: boolean }
   | { type: 'flatten'; color: string }
+  | { type: 'adjust'; params: AdjustParams }
+  /** mask is width*height bytes, non-zero = fill this pixel */
+  | { type: 'inpaint'; mask: Uint8Array; width: number; height: number }
 
 export interface EncodeOptions {
   format: OutputFormat
@@ -22,6 +27,7 @@ export interface EncodeOptions {
 }
 
 export interface ProcessRequest {
+  kind: 'process'
   id: string
   source: Blob
   ops: Op[]
@@ -41,6 +47,39 @@ export type ProcessResponse =
       missedTarget?: boolean
     }
   | { id: string; ok: false; error: string }
+
+/** Decode + downscale a source once and keep it in the worker under `key`. */
+export interface PreviewCacheRequest {
+  kind: 'cache'
+  id: string
+  key: string
+  source: Blob
+  maxSide: number
+}
+
+/** Apply ops to a cached preview and return an ImageBitmap. */
+export interface PreviewRenderRequest {
+  kind: 'render'
+  id: string
+  key: string
+  ops: Op[]
+  /** Optionally shrink further before applying ops (thumbnails). */
+  maxSide?: number
+}
+
+export interface PreviewEvictRequest {
+  kind: 'evict'
+  id: string
+  key: string
+}
+
+export type WorkerRequest = ProcessRequest | PreviewCacheRequest | PreviewRenderRequest | PreviewEvictRequest
+
+export type PreviewResponse =
+  | { id: string; ok: true; bitmap?: ImageBitmap; width: number; height: number }
+  | { id: string; ok: false; error: string }
+
+export type WorkerResponse = ProcessResponse | PreviewResponse
 
 export interface LoadedFile {
   id: string

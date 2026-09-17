@@ -85,6 +85,8 @@ export interface ToolShellProps {
   multiple?: boolean
   /** Called when the user goes back from results to options (e.g. to clear cached work). */
   onReset?: () => void
+  /** Extra line shown while processing (e.g. "Downloading model…"). */
+  statusText?: ReactNode
 }
 
 type Stage = 'ready' | 'processing' | 'done'
@@ -101,6 +103,7 @@ export function ToolShell({
   zipName,
   multiple = true,
   onReset,
+  statusText,
 }: ToolShellProps) {
   const [stage, setStage] = useState<Stage>('ready')
   const [jobs, setJobs] = useState<Record<string, JobState>>({})
@@ -266,8 +269,11 @@ export function ToolShell({
             {stage === 'processing' ? (
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
-                Processing {Object.values(jobs).filter((j) => j.status === 'done' || j.status === 'error').length}/
-                {files.files.length}…
+                <span>
+                  Processing {Object.values(jobs).filter((j) => j.status === 'done' || j.status === 'error').length}/
+                  {files.files.length}…
+                </span>
+                {statusText && <span className="text-slate-500">· {statusText}</span>}
               </div>
             ) : (
               <div className="text-sm text-slate-700">

@@ -1,7 +1,11 @@
-import type { ProcessRequest, ProcessResponse } from './types'
+import type { Op, PreviewResponse, ProcessRequest, ProcessResponse, WorkerRequest, WorkerResponse } from './types'
 
 type Pending = {
   resolve: (r: ProcessResponse) => void
+}
+
+function makeWorker(): Worker {
+  return new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 }
 
 /**
@@ -15,7 +19,7 @@ class WorkerPool {
 
   constructor(size: number) {
     for (let i = 0; i < size; i++) {
-      const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+      const worker = makeWorker()
       const slot = { worker, busy: false }
       worker.onmessage = (e: MessageEvent<ProcessResponse>) => {
         const p = this.pending.get(e.data.id)
@@ -72,8 +76,61 @@ export function nextId(prefix = 'job'): string {
   return `${prefix}-${Date.now().toString(36)}-${counter}`
 }
 
-export async function processImage(req: Omit<ProcessRequest, 'id'>): Promise<Extract<ProcessResponse, { ok: true }>> {
-  const res = await getPool().run({ ...req, id: nextId() })
+export async function processImage(
+  req: Omit<ProcessRequest, 'id' | 'kind'>,
+): Promise<Extract<ProcessResponse, { ok: true }>> {
+  const res = await getPool().run({ ...req, kind: 'process', id: nextId() })
   if (!res.ok) throw new Error(res.error)
   return res
+}
+
+/**
+ * A single dedicated worker for interactive previews. It caches decoded,
+ * downscaled sources so slider changes only pay for the pixel math.
+ */
+class PreviewWorker {
+  private worker = makeWorker()
+  private pending = new Map<string, { resolve: (r: WorkerResponse) => void }>()
+
+  constructor() {
+    this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      const p = this.pending.get(e.data.id)
+      this.pending.delete(e.data.id)
+      p?.resolve(e.data)
+    }
+    this.worker.onerror = (e) => {
+      for (const [id, p] of this.pending) p.resolve({ id, ok: false, error: e.message || 'Preview worker crashed' })
+      this.pending.clear()
+    }
+  }
+
+  private send(req: WorkerRequest): Promise<WorkerResponse> {
+    return new Promise((resolve) => {
+      this.pending.set(req.id, { resolve })
+      this.worker.postMessage(req)
+    })
+  }
+
+  async cache(key: string, source: Blob, maxSide: number): Promise<{ width: number; height: number }> {
+    const res = (await this.send({ kind: 'cache', id: nextId('pv'), key, source, maxSide })) as PreviewResponse
+    if (!res.ok) throw new Error(res.error)
+    return { width: res.width, height: res.height }
+  }
+
+  async render(key: string, ops: Op[], maxSide?: number): Promise<ImageBitmap> {
+    const res = (await this.send({ kind: 'render', id: nextId('pv'), key, ops, maxSide })) as PreviewResponse
+    if (!res.ok) throw new Error(res.error)
+    if (!res.bitmap) throw new Error('No preview produced')
+    return res.bitmap
+  }
+
+  evict(key: string) {
+    void this.send({ kind: 'evict', id: nextId('pv'), key })
+  }
+}
+
+let preview: PreviewWorker | null = null
+export function getPreviewWorker(): PreviewWorker {
+  if (!preview) preview = new PreviewWorker()
+  return preview
 }

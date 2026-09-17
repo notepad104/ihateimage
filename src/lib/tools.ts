@@ -3,9 +3,12 @@ import {
   Crop,
   Eraser,
   FileOutput,
+  MapPinOff,
   Maximize2,
   Minimize2,
   RotateCw,
+  Sparkles,
+  Wand2,
 } from 'lucide-react'
 
 export interface ToolDef {
@@ -76,6 +79,36 @@ export const TOOLS: ToolDef[] = [
       'Automatically remove the background from photos of people, products and objects. The AI model runs on your device.',
     icon: Eraser,
     tint: 'bg-fuchsia-100 text-fuchsia-700',
+  },
+  {
+    id: 'beautify',
+    path: '/beautify',
+    name: 'Beautify image',
+    tagline: 'Light, color, filters, recolor',
+    description:
+      'Fix exposure and white balance, boost colors, apply one-tap looks, and swap a specific color for another with the eyedropper.',
+    icon: Sparkles,
+    tint: 'bg-pink-100 text-pink-700',
+  },
+  {
+    id: 'remove-objects',
+    path: '/remove-objects',
+    name: 'Remove objects',
+    tagline: 'Brush away people, text, blemishes',
+    description:
+      'Paint over anything unwanted and content-aware fill rebuilds the background from the surrounding pixels.',
+    icon: Wand2,
+    tint: 'bg-teal-100 text-teal-700',
+  },
+  {
+    id: 'metadata',
+    path: '/metadata',
+    name: 'Edit EXIF & GPS',
+    tagline: 'View, strip or rewrite metadata',
+    description:
+      'See what your JPG reveals: location, camera, date. Remove it all or replace it with your own values, without re-encoding.',
+    icon: MapPinOff,
+    tint: 'bg-slate-200 text-slate-700',
   },
 ]
 

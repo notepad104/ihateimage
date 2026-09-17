@@ -2,6 +2,8 @@
  * Pure canvas operations. This module is imported by the Web Worker and must
  * not touch the DOM. Everything here works on OffscreenCanvas.
  */
+import { applyAdjust, type AdjustParams } from './adjust'
+import { inpaint } from './inpaint'
 import type { EncodeOptions, Op, OutputFormat } from './types'
 
 type Ctx2D = OffscreenCanvasRenderingContext2D
@@ -94,8 +96,33 @@ export function flatten(src: OffscreenCanvas, color: string): OffscreenCanvas {
   return out
 }
 
+export function adjust(src: OffscreenCanvas, params: AdjustParams): OffscreenCanvas {
+  const ctx = src.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
+  const img = ctx.getImageData(0, 0, src.width, src.height)
+  applyAdjust(img, params)
+  ctx.putImageData(img, 0, 0)
+  return src
+}
+
+export function inpaintCanvas(src: OffscreenCanvas, mask: Uint8Array, mw: number, mh: number): OffscreenCanvas {
+  if (mw !== src.width || mh !== src.height) {
+    throw new Error(`Mask size ${mw}×${mh} does not match image ${src.width}×${src.height}`)
+  }
+  const ctx = src.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
+  const img = ctx.getImageData(0, 0, src.width, src.height)
+  const out = inpaint(img, mask)
+  ctx.putImageData(out, 0, 0)
+  return src
+}
+
 export function applyOp(src: OffscreenCanvas, op: Op): OffscreenCanvas {
   switch (op.type) {
+    case 'adjust':
+      return adjust(src, op.params)
+    case 'inpaint':
+      return inpaintCanvas(src, op.mask, op.width, op.height)
     case 'resize':
       return resize(src, op.width, op.height)
     case 'crop':

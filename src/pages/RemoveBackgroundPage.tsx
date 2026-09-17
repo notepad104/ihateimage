@@ -66,13 +66,13 @@ export function RemoveBackgroundPage() {
       processLabel="Remove background"
       process={process}
       concurrency={1}
+      statusText={status}
       options={
         <>
           <Notice tone="info">
             The first run downloads the AI model ({MODEL_INFO[model].size}) to your browser and caches it. Your photos
             are still processed entirely on this device.
           </Notice>
-          {status && <p className="text-xs text-slate-600">{status}</p>}
 
           <div className="space-y-3">
             <SectionTitle>Model</SectionTitle>

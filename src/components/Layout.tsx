@@ -15,21 +15,26 @@ export function Layout({ children }: { children: ReactNode }) {
               ihate<span className="text-brand-600">image</span>
             </span>
           </Link>
-          <nav className="hidden items-center gap-1 lg:flex">
-            {TOOLS.map((t) => (
-              <NavLink
-                key={t.id}
-                to={t.path}
-                className={({ isActive }) =>
-                  cx(
-                    'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-                    isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-                  )
-                }
-              >
-                {t.name}
-              </NavLink>
-            ))}
+          <nav className="hidden items-center gap-0.5 lg:flex">
+            {TOOLS.map((t) => {
+              const Icon = t.icon
+              return (
+                <NavLink
+                  key={t.id}
+                  to={t.path}
+                  title={t.name}
+                  className={({ isActive }) =>
+                    cx(
+                      'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                      isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                    )
+                  }
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="hidden 2xl:inline">{t.name}</span>
+                </NavLink>
+              )
+            })}
           </nav>
           <div className="ml-auto flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
             <ShieldCheck className="h-3.5 w-3.5" />

@@ -1,11 +1,14 @@
 import { Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { AspectRatioPage } from './pages/AspectRatioPage'
+import { BeautifyPage } from './pages/BeautifyPage'
 import { CompressPage } from './pages/CompressPage'
 import { ConvertPage } from './pages/ConvertPage'
 import { Home } from './pages/Home'
+import { MetadataPage } from './pages/MetadataPage'
 import { NotFound } from './pages/NotFound'
 import { RemoveBackgroundPage } from './pages/RemoveBackgroundPage'
+import { RemoveObjectsPage } from './pages/RemoveObjectsPage'
 import { ResizePage } from './pages/ResizePage'
 import { RotatePage } from './pages/RotatePage'
 
@@ -20,6 +23,9 @@ export default function App() {
         <Route path="/convert" element={<ConvertPage />} />
         <Route path="/rotate" element={<RotatePage />} />
         <Route path="/remove-background" element={<RemoveBackgroundPage />} />
+        <Route path="/beautify" element={<BeautifyPage />} />
+        <Route path="/remove-objects" element={<RemoveObjectsPage />} />
+        <Route path="/metadata" element={<MetadataPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>
