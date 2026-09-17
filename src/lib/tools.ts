@@ -1,0 +1,86 @@
+import type { LucideIcon } from 'lucide-react'
+import {
+  Crop,
+  Eraser,
+  FileOutput,
+  Maximize2,
+  Minimize2,
+  RotateCw,
+} from 'lucide-react'
+
+export interface ToolDef {
+  id: string
+  path: string
+  name: string
+  tagline: string
+  description: string
+  icon: LucideIcon
+  /** Tailwind classes for the icon tile */
+  tint: string
+}
+
+export const TOOLS: ToolDef[] = [
+  {
+    id: 'compress',
+    path: '/compress',
+    name: 'Compress image',
+    tagline: 'Shrink file size, keep the quality',
+    description:
+      'Reduce JPG, PNG, WebP and AVIF file sizes with a quality slider or a target file size. Great for email, web and messaging.',
+    icon: Minimize2,
+    tint: 'bg-emerald-100 text-emerald-700',
+  },
+  {
+    id: 'resize',
+    path: '/resize',
+    name: 'Resize image',
+    tagline: 'Set exact pixels or a percentage',
+    description: 'Change width and height in pixels or by percentage, in bulk. Lock the aspect ratio or fit inside a box.',
+    icon: Maximize2,
+    tint: 'bg-sky-100 text-sky-700',
+  },
+  {
+    id: 'aspect',
+    path: '/aspect-ratio',
+    name: 'Change aspect ratio',
+    tagline: 'Crop or pad to 1:1, 16:9, 4:5 …',
+    description:
+      'Crop to a new ratio with a draggable frame, or add borders so nothing is cut off. Perfect for social media sizes.',
+    icon: Crop,
+    tint: 'bg-violet-100 text-violet-700',
+  },
+  {
+    id: 'convert',
+    path: '/convert',
+    name: 'Convert format',
+    tagline: 'JPG, PNG, WebP and AVIF',
+    description: 'Convert between JPG, PNG, WebP and AVIF. Pick a background color when dropping transparency.',
+    icon: FileOutput,
+    tint: 'bg-amber-100 text-amber-700',
+  },
+  {
+    id: 'rotate',
+    path: '/rotate',
+    name: 'Rotate & flip',
+    tagline: 'Turn 90°, 180°, mirror',
+    description: 'Rotate in 90° steps and mirror horizontally or vertically. Fixes sideways photos in one click.',
+    icon: RotateCw,
+    tint: 'bg-rose-100 text-rose-700',
+  },
+  {
+    id: 'remove-bg',
+    path: '/remove-background',
+    name: 'Remove background',
+    tagline: 'AI cut-out, right in your browser',
+    description:
+      'Automatically remove the background from photos of people, products and objects. The AI model runs on your device.',
+    icon: Eraser,
+    tint: 'bg-fuchsia-100 text-fuchsia-700',
+  },
+]
+
+export function toolById(id: string): ToolDef {
+  const t = TOOLS.find((x) => x.id === id)
+  if (!t) throw new Error(`Unknown tool ${id}`)
+  return t
+}
