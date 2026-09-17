@@ -41,6 +41,25 @@ The output is a static single-page app. Every route must fall back to `index.htm
 
 Cache policy: `/assets/*` files are content-hashed and can be cached forever; `index.html` must not be cached.
 
+### AWS (S3 + CloudFront), lowest cost
+
+`deploy/aws/template.yaml` creates a private S3 bucket, a CloudFront distribution with the security headers, a CloudFront Function for clean URLs and an SPA fallback. `deploy/aws/deploy.sh` creates or updates the stack, builds with the right `VITE_SITE_URL`, uploads with correct cache headers and invalidates the cache.
+
+```bash
+aws configure            # once
+bash deploy/aws/deploy.sh
+```
+
+The script prints the `https://xxxx.cloudfront.net` URL. For a custom domain, request a free ACM certificate in `us-east-1` (`aws acm request-certificate --region us-east-1 --domain-name tools.example.com --validation-method DNS`), add the validation CNAME at your DNS provider, then:
+
+```bash
+DOMAIN=tools.example.com CERT_ARN=arn:aws:acm:us-east-1:123456789012:certificate/... bash deploy/aws/deploy.sh
+```
+
+Add `HOSTED_ZONE_ID=Z...` if the domain is in Route 53 and the alias records should be created for you.
+
+Cost: CloudFront's always-free tier covers 1 TB/month of transfer, 10M requests and 2M function invocations; S3 storage for the ~30 MB bundle is about a cent. Without a custom domain the bill rounds to $0. With one, Route 53 adds $0.50/month per hosted zone plus the domain registration. The AI models are downloaded from Hugging Face, not from your bucket, so they don't count against your transfer.
+
 ## Security notes
 
 - **Content Security Policy**: `default-src 'self'`; scripts only from the same origin plus `'wasm-unsafe-eval'` for WebAssembly and `blob:` for the runtime's glue module (blob URLs can only be created by script already running on the origin, so this adds no injection vector); connections only to the origin, `blob:` (same reasoning) and the model host (`huggingface.co`, `*.hf.co`); no inline scripts or styles; `object-src 'none'`, `base-uri 'self'`, `form-action 'none'`, `frame-ancestors 'none'`. The policy is defined once in `vite.config.ts` and mirrored in the host configs.
