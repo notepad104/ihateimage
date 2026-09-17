@@ -58,6 +58,19 @@ DOMAIN=tools.example.com CERT_ARN=arn:aws:acm:us-east-1:123456789012:certificate
 
 Add `HOSTED_ZONE_ID=Z...` if the domain is in Route 53 and the alias records should be created for you.
 
+**IAM user for deploying.** `deploy/aws/deploy-policy.json` is a least-privilege policy: it can manage the `ihateimage` CloudFormation stack and the resources it creates (buckets named `ihateimage-*`, the distribution, its function and headers policy), upload objects, and invalidate the cache. Nothing else in the account. Replace `ACCOUNT_ID` and `REGION`, then:
+
+```bash
+sed -e "s/ACCOUNT_ID/$(aws sts get-caller-identity --query Account --output text)/g" -e "s/REGION/us-east-1/g" deploy/aws/deploy-policy.json > /tmp/ihateimage-deploy-policy.json
+aws iam create-policy --policy-name ihateimage-deploy --policy-document file:///tmp/ihateimage-deploy-policy.json
+aws iam create-user --user-name ihateimage-deploy
+aws iam attach-user-policy --user-name ihateimage-deploy --policy-arn arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/ihateimage-deploy
+aws iam create-access-key --user-name ihateimage-deploy
+aws configure --profile ihateimage      # paste the key; then: AWS_PROFILE=ihateimage bash deploy/aws/deploy.sh
+```
+
+Run those as your admin identity once; deploy with the `ihateimage` profile afterwards. If you deploy from GitHub Actions, attach the same policy to an IAM role trusted by GitHub's OIDC provider instead of creating access keys. The last statement (ACM and Route 53) is only needed for a custom domain and can be deleted otherwise.
+
 Cost: CloudFront's always-free tier covers 1 TB/month of transfer, 10M requests and 2M function invocations; S3 storage for the ~30 MB bundle is about a cent. Without a custom domain the bill rounds to $0. With one, Route 53 adds $0.50/month per hosted zone plus the domain registration. The AI models are downloaded from Hugging Face, not from your bucket, so they don't count against your transfer.
 
 ## Security notes

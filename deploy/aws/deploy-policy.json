@@ -1,0 +1,124 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageTheStack",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:GetTemplate"
+      ],
+      "Resource": "arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/ihateimage/*"
+    },
+    {
+      "Sid": "TemplateChecks",
+      "Effect": "Allow",
+      "Action": ["cloudformation:GetTemplateSummary", "cloudformation:ValidateTemplate"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SiteBucketLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:DeleteBucketPolicy",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketOwnershipControls",
+        "s3:PutBucketOwnershipControls",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketAcl"
+      ],
+      "Resource": "arn:aws:s3:::ihateimage-*"
+    },
+    {
+      "Sid": "UploadTheSite",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::ihateimage-*/*"
+    },
+    {
+      "Sid": "CloudFrontCreate",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateDistribution",
+        "cloudfront:CreateOriginAccessControl",
+        "cloudfront:CreateFunction",
+        "cloudfront:CreateResponseHeadersPolicy",
+        "cloudfront:ListDistributions",
+        "cloudfront:ListOriginAccessControls",
+        "cloudfront:ListFunctions",
+        "cloudfront:ListResponseHeadersPolicies",
+        "cloudfront:ListCachePolicies"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudFrontManage",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:DeleteDistribution",
+        "cloudfront:TagResource",
+        "cloudfront:UntagResource",
+        "cloudfront:ListTagsForResource",
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation",
+        "cloudfront:GetOriginAccessControl",
+        "cloudfront:GetOriginAccessControlConfig",
+        "cloudfront:UpdateOriginAccessControl",
+        "cloudfront:DeleteOriginAccessControl",
+        "cloudfront:GetFunction",
+        "cloudfront:DescribeFunction",
+        "cloudfront:UpdateFunction",
+        "cloudfront:PublishFunction",
+        "cloudfront:DeleteFunction",
+        "cloudfront:GetResponseHeadersPolicy",
+        "cloudfront:GetResponseHeadersPolicyConfig",
+        "cloudfront:UpdateResponseHeadersPolicy",
+        "cloudfront:DeleteResponseHeadersPolicy"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::ACCOUNT_ID:distribution/*",
+        "arn:aws:cloudfront::ACCOUNT_ID:origin-access-control/*",
+        "arn:aws:cloudfront::ACCOUNT_ID:function/*",
+        "arn:aws:cloudfront::ACCOUNT_ID:response-headers-policy/*"
+      ]
+    },
+    {
+      "Sid": "CustomDomainOptional",
+      "Effect": "Allow",
+      "Action": [
+        "acm:RequestCertificate",
+        "acm:DescribeCertificate",
+        "acm:ListCertificates",
+        "acm:AddTagsToCertificate",
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:ChangeResourceRecordSets",
+        "route53:GetChange"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
