@@ -2,15 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#e11d48" />
+    <title>ihateimage — Private, in-browser image tools</title>
     <meta
       name="description"
-      content="Free online image tools that run 100% in your browser. Compress, resize, crop, convert, rotate and remove backgrounds. Your images never leave your device."
+      content="Free image tools that run 100% in your browser. Compress, resize, crop, convert, rotate, beautify, watermark, remove objects and backgrounds, edit EXIF. Your images never leave your device."
     />
-    <title>ihateimage — Private, in-browser image tools</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="ihateimage — Private, in-browser image tools" />
+    <meta
+      property="og:description"
+      content="Compress, resize, crop, convert, beautify, watermark and clean up photos without uploading them anywhere."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
   </head>
   <body>
+    <noscript>
+      <div style="font-family: system-ui, sans-serif; padding: 2rem; max-width: 40rem; margin: 0 auto">
+        <h1>ihateimage needs JavaScript</h1>
+        <p>
+          Every tool here runs inside your browser so your images never leave your device. That is only possible with
+          JavaScript enabled.
+        </p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

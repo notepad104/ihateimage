@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom'
 import { downloadAll } from '../lib/download'
 import { filesFromDataTransfer, loadFiles, revokeFiles } from '../lib/files'
 import { formatBytes, percentChange } from '../lib/format'
+import { TOOL_SEO } from '../lib/seo'
 import type { ToolDef } from '../lib/tools'
+import { ToolGuide } from './Seo'
 import type { LoadedFile, ProcessResult } from '../lib/types'
 import { DropZone } from './DropZone'
 import { FileGrid } from './FileGrid'
@@ -208,6 +210,7 @@ export function ToolShell({
   }
 
   const Icon = tool.icon
+  const seo = TOOL_SEO[tool.id]
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
@@ -339,6 +342,7 @@ export function ToolShell({
           )}
         </div>
       )}
+      {seo && files.files.length === 0 && <ToolGuide page={seo} />}
     </div>
   )
 }

@@ -4,7 +4,7 @@
  */
 import { applyAdjust, type AdjustParams } from './adjust'
 import { inpaint } from './inpaint'
-import type { EncodeOptions, Op, OutputFormat } from './types'
+import type { EncodeOptions, Op, OutputFormat, WatermarkSpec } from './types'
 
 type Ctx2D = OffscreenCanvasRenderingContext2D
 
@@ -117,8 +117,112 @@ export function inpaintCanvas(src: OffscreenCanvas, mask: Uint8Array, mw: number
   return src
 }
 
+function clampNum(v: number, lo: number, hi: number) {
+  return lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v))
+}
+
+/** Draws a text or logo watermark. `bitmap` is the decoded logo for kind = 'image'. */
+export function watermark(src: OffscreenCanvas, spec: WatermarkSpec, bitmap?: ImageBitmap): OffscreenCanvas {
+  const ctx = src.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
+  const W = src.width
+  const H = src.height
+  const minSide = Math.min(W, H)
+  const rot = (-spec.rotation * Math.PI) / 180
+  ctx.save()
+  ctx.globalAlpha = clampNum(spec.opacity, 0, 1)
+
+  let wmW: number
+  let wmH: number
+  let draw: (cx: number, cy: number) => void
+
+  if (spec.kind === 'image') {
+    if (!bitmap) {
+      ctx.restore()
+      return src
+    }
+    wmW = Math.max(1, (spec.size / 100) * W)
+    wmH = Math.max(1, wmW * (bitmap.height / bitmap.width))
+    draw = (cx, cy) => {
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.rotate(rot)
+      ctx.drawImage(bitmap, -wmW / 2, -wmH / 2, wmW, wmH)
+      ctx.restore()
+    }
+  } else {
+    const px = Math.max(4, (spec.size / 100) * minSide)
+    ctx.font = `${spec.bold ? '700' : '400'} ${px}px ${spec.font}`
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'center'
+    const lines = (spec.text || ' ').split('\n')
+    const lineH = px * 1.2
+    wmW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width))
+    wmH = lineH * lines.length
+    draw = (cx, cy) => {
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.rotate(rot)
+      if (spec.shadow) {
+        ctx.shadowColor = 'rgba(0,0,0,0.55)'
+        ctx.shadowBlur = px * 0.18
+        ctx.shadowOffsetX = px * 0.04
+        ctx.shadowOffsetY = px * 0.04
+      }
+      ctx.fillStyle = spec.color
+      lines.forEach((l, i) => ctx.fillText(l, 0, (i - (lines.length - 1) / 2) * lineH))
+      ctx.restore()
+    }
+  }
+
+  // Axis-aligned extent of the rotated watermark.
+  const cos = Math.abs(Math.cos(rot))
+  const sin = Math.abs(Math.sin(rot))
+  const bw = wmW * cos + wmH * sin
+  const bh = wmW * sin + wmH * cos
+
+  if (spec.tile) {
+    const stepX = Math.max(8, bw * (1 + spec.tileGap))
+    const stepY = Math.max(8, bh * (1 + spec.tileGap))
+    let row = 0
+    for (let y = stepY / 2; y < H + bh; y += stepY, row++) {
+      const offset = row % 2 ? stepX / 2 : 0
+      for (let x = stepX / 2 - offset; x < W + bw; x += stepX) draw(x, y)
+    }
+  } else {
+    const m = minSide * 0.025
+    const cx = clampNum(spec.x * W, bw / 2 + m, W - bw / 2 - m)
+    const cy = clampNum(spec.y * H, bh / 2 + m, H - bh / 2 - m)
+    draw(cx, cy)
+  }
+  ctx.restore()
+  return src
+}
+
+/** Decode any blobs the ops carry (logo images) into bitmaps. Call before applyOps. */
+export async function prepareOps(ops: Op[]): Promise<Op[]> {
+  return Promise.all(
+    ops.map(async (op) => {
+      if (op.type === 'watermark' && op.spec.kind === 'image' && op.spec.image && !op.bitmap) {
+        try {
+          return { ...op, bitmap: await createImageBitmap(op.spec.image) }
+        } catch {
+          throw new Error('The watermark logo could not be decoded')
+        }
+      }
+      return op
+    }),
+  )
+}
+
+export function releaseOps(ops: Op[]) {
+  for (const op of ops) if (op.type === 'watermark') op.bitmap?.close()
+}
+
 export function applyOp(src: OffscreenCanvas, op: Op): OffscreenCanvas {
   switch (op.type) {
+    case 'watermark':
+      return watermark(src, op.spec, op.bitmap)
     case 'adjust':
       return adjust(src, op.params)
     case 'inpaint':

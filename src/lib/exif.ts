@@ -121,8 +121,11 @@ function readJpegSegments(bytes: Uint8Array): { segments: JpegSegment[]; scanSta
     }
     if (marker === 0xda) return { segments, scanStart: pos }
     const len = (bytes[pos + 2] << 8) | bytes[pos + 3]
+    // A length below 2 or running past the file means a corrupt header; stop rather than loop.
+    if (len < 2 || pos + 2 + len > bytes.length) break
     segments.push({ marker, start: pos, end: pos + 2 + len, data: bytes.subarray(pos + 4, pos + 2 + len) })
     pos += 2 + len
+    if (segments.length > 256) break
   }
   return { segments, scanStart: pos }
 }
@@ -148,12 +151,14 @@ function readPngChunks(bytes: Uint8Array): PngChunk[] {
   const chunks: PngChunk[] = []
   let pos = 8
   while (pos + 8 <= bytes.length) {
-    const len = (bytes[pos] << 24) | (bytes[pos + 1] << 16) | (bytes[pos + 2] << 8) | bytes[pos + 3]
+    const len = ((bytes[pos] << 24) | (bytes[pos + 1] << 16) | (bytes[pos + 2] << 8) | bytes[pos + 3]) >>> 0
     const type = str(bytes, pos + 4, 4)
     const end = pos + 12 + len
+    // Chunk claims more data than the file has: corrupt or hostile; stop parsing.
+    if (len > 0x7fffffff || end > bytes.length || !/^[A-Za-z]{4}$/.test(type)) break
     chunks.push({ type, start: pos, end, data: bytes.subarray(pos + 8, pos + 8 + len) })
     pos = end
-    if (type === 'IEND') break
+    if (type === 'IEND' || chunks.length > 4096) break
   }
   return chunks
 }
@@ -200,10 +205,12 @@ function readRiffChunks(bytes: Uint8Array): RiffChunk[] {
   let pos = 12
   while (pos + 8 <= bytes.length) {
     const fourcc = str(bytes, pos, 4)
-    const size = bytes[pos + 4] | (bytes[pos + 5] << 8) | (bytes[pos + 6] << 16) | (bytes[pos + 7] << 24)
+    const size = (bytes[pos + 4] | (bytes[pos + 5] << 8) | (bytes[pos + 6] << 16) | (bytes[pos + 7] << 24)) >>> 0
+    if (size > bytes.length - pos - 8) break
     const end = pos + 8 + size + (size % 2)
     chunks.push({ fourcc, start: pos, end: Math.min(end, bytes.length), data: bytes.subarray(pos + 8, pos + 8 + size) })
     pos = end
+    if (chunks.length > 4096) break
   }
   return chunks
 }
@@ -337,8 +344,9 @@ function display(tag: number, v: ExifValue, ifd: string): string {
 
 function parseIfd(r: TiffReader, offset: number, ifd: 'ifd0' | 'exif' | 'gps', out: ExifEntry[]): Record<number, ExifValue> {
   const values: Record<number, ExifValue> = {}
-  if (offset + 2 > r.buf.length) return values
-  const count = r.u16(offset)
+  if (offset < 8 || offset + 2 > r.buf.length) return values
+  // Real IFDs have a few dozen entries; cap defends against crafted files.
+  const count = Math.min(r.u16(offset), 512)
   for (let i = 0; i < count; i++) {
     const e = offset + 2 + i * 12
     if (e + 12 > r.buf.length) break
@@ -477,8 +485,11 @@ interface WEntry {
 
 const enc = new TextEncoder()
 
+const MAX_FIELD = 1024
+
 function ascii(tag: number, s: string): WEntry {
-  const bytes = enc.encode(s.replace(/[^\x20-\x7e]/g, '?') + '\0')
+  // EXIF ASCII fields: printable 7-bit only, bounded length, NUL-terminated.
+  const bytes = enc.encode(s.slice(0, MAX_FIELD).replace(/[^\x20-\x7e]/g, '?') + '\0')
   return { tag, type: 2, data: bytes, count: bytes.length }
 }
 function u16(tag: number, v: number): WEntry {

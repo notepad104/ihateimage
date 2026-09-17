@@ -1,5 +1,6 @@
 import { ArrowRight, Cpu, Lock, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { HOME_SEO, TOOL_SEO } from '../lib/seo'
 import { TOOLS } from '../lib/tools'
 
 export function Home() {
@@ -11,12 +12,9 @@ export function Home() {
             <Lock className="h-3.5 w-3.5" /> 100% in your browser · no uploads · no accounts
           </p>
           <h1 className="mx-auto max-w-3xl text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
-            Every tool you need to work with images, without giving them away
+            {HOME_SEO.h1}
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600">
-            Compress, resize, crop, convert, rotate and remove backgrounds. Your files never leave this tab, so it's
-            fast, free and private by design.
-          </p>
+          <p className="mx-auto mt-4 max-w-2xl text-lg text-slate-600">{HOME_SEO.intro}</p>
         </div>
       </section>
 
@@ -34,7 +32,7 @@ export function Home() {
                   <Icon className="h-6 w-6" />
                 </div>
                 <h2 className="mt-4 text-lg font-semibold text-slate-900">{t.name}</h2>
-                <p className="mt-1 text-sm text-slate-600">{t.tagline}</p>
+                <p className="mt-1 text-sm text-slate-600">{TOOL_SEO[t.id]?.description.split('.')[0] ?? t.tagline}.</p>
                 <span className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-700 opacity-0 transition-opacity group-hover:opacity-100">
                   Open tool <ArrowRight className="h-4 w-4" />
                 </span>
@@ -59,9 +57,23 @@ export function Home() {
           <Feature
             icon={Cpu}
             title="Real codecs, real AI"
-            body="Native JPEG, PNG, WebP and AVIF encoders, plus an on-device neural network for background removal. Nothing is faked."
+            body="Native JPEG, PNG, WebP and AVIF encoders, plus on-device neural networks for background removal and object fill. Nothing is faked."
           />
         </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-20 sm:px-6" aria-labelledby="faq-heading">
+        <h2 id="faq-heading" className="text-2xl font-bold text-slate-900">
+          Frequently asked questions
+        </h2>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          {HOME_SEO.faqs.map((f) => (
+            <div key={f.q} className="rounded-xl border border-slate-200 bg-white p-4">
+              <dt className="font-medium text-slate-900">{f.q}</dt>
+              <dd className="mt-1 text-sm text-slate-600">{f.a}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
     </>
   )

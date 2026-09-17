@@ -3,8 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import { DropZone } from '../components/DropZone'
 import { FormatPicker, useEncodeSupport, type FormatChoice } from '../components/FormatPicker'
 import { MaskEditor, type MaskEditorHandle, type Stroke } from '../components/MaskEditor'
+import { ToolGuide } from '../components/Seo'
 import { Button, Field, Notice, SectionTitle, Segmented, Slider } from '../components/ui'
-import { aiInpaint, blobToImageData, imageDataToBlob, isModelCached, MODEL_SIZE_LABEL } from '../lib/aiInpaint'
+import { TOOL_SEO } from '../lib/seo'
+import { aiInpaint, blobToImageData, imageDataToBlob, isInpaintModelCached, MODEL_SIZE_LABEL } from '../lib/aiInpaint'
 import { downloadBlob } from '../lib/download'
 import { loadFiles } from '../lib/files'
 import { formatBytes, withExt } from '../lib/format'
@@ -43,7 +45,7 @@ export function RemoveObjectsPage() {
   const [quality, setQuality] = useState(92)
 
   useEffect(() => {
-    void isModelCached().then(setModelCached)
+    void isInpaintModelCached().then(setModelCached)
   }, [])
 
   // Revoke object URLs on unmount.
@@ -166,7 +168,10 @@ export function RemoveObjectsPage() {
       )}
 
       {!source || !file ? (
-        <DropZone onFiles={(l) => void open(l)} multiple={false} />
+        <>
+          <DropZone onFiles={(l) => void open(l)} multiple={false} />
+          <ToolGuide page={TOOL_SEO['remove-objects']} />
+        </>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-3">

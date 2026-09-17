@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { applyOps, decode, encode, fromBitmap, resize } from './image-ops'
+import { applyOps, decode, encode, fromBitmap, prepareOps, releaseOps, resize } from './image-ops'
 import type { PreviewResponse, ProcessResponse, WorkerRequest } from './types'
 
 /** Downscaled sources kept for live previews, keyed by the page-provided key. */
@@ -25,7 +25,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const bitmap = await decode(req.source)
         let canvas = fromBitmap(bitmap)
         bitmap.close()
-        canvas = applyOps(canvas, req.ops)
+        const ops = await prepareOps(req.ops)
+        try {
+          canvas = applyOps(canvas, ops)
+        } finally {
+          releaseOps(ops)
+        }
         const { blob, quality, missedTarget } = await encode(canvas, req.encode)
         const res: ProcessResponse = {
           id: req.id,
@@ -53,7 +58,12 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         if (!cached) throw new Error('Preview source not loaded')
         let canvas = req.maxSide ? fitCanvas(cached, req.maxSide) : cached
         canvas = canvas === cached ? copyCanvas(cached) : canvas
-        canvas = applyOps(canvas, req.ops)
+        const ops = await prepareOps(req.ops)
+        try {
+          canvas = applyOps(canvas, ops)
+        } finally {
+          releaseOps(ops)
+        }
         const bitmap = canvas.transferToImageBitmap()
         const res: PreviewResponse = { id: req.id, ok: true, bitmap, width: bitmap.width, height: bitmap.height }
         self.postMessage(res, [bitmap])

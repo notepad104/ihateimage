@@ -1,127 +1,26 @@
 /**
  * AI object removal with MI-GAN (Sargsyan et al., ICCV 2023) running on-device
- * through ONNX Runtime Web. The ~28 MB model is fetched once from Hugging Face
- * and kept in the browser's Cache Storage; pixels never leave the page.
+ * through ONNX Runtime Web. The ~28 MB model is fetched once from Hugging Face,
+ * verified against a pinned SHA-256 and kept in Cache Storage; pixels never
+ * leave the page.
  *
  * Model contract (migan_pipeline_v2.onnx):
  *   image: uint8 [1,3,512,512]   mask: uint8 [1,1,512,512] (255 keep, 0 fill)
  *   result: uint8 [1,3,512,512]
  */
-export const MODEL_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx'
-export const MODEL_SIZE_LABEL = '~28 MB'
-const CACHE_NAME = 'ihateimage-models-v1'
-const ORT_VERSION = '1.21.0'
-/** Used only if the bundled runtime files cannot be located (e.g. unusual hosting setups). */
-const ORT_CDN = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`
+import { getSession, isModelCached, type ModelProgress, type PinnedModel } from './onnx'
+
+export const MIGAN_MODEL: PinnedModel = {
+  url: 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx',
+  sha256: '6f1f3530a1a2324b19752018ce756088b07973cda8d7d890034ace5c8a48c40b',
+  bytes: 28_079_181,
+  sizeLabel: '~28 MB',
+}
+export const MODEL_SIZE_LABEL = MIGAN_MODEL.sizeLabel
 const N = 512
 
-type Ort = typeof import('onnxruntime-web')
-type Session = import('onnxruntime-web').InferenceSession
-
-let ortPromise: Promise<Ort> | null = null
-let sessionPromise: Promise<{ ort: Ort; session: Session }> | null = null
-
-async function loadOrt(): Promise<Ort> {
-  if (!ortPromise) {
-    ortPromise = import('onnxruntime-web').then((ort) => {
-      // Without cross-origin isolation only one wasm thread is available anyway.
-      ort.env.wasm.numThreads = 1
-      return ort
-    })
-  }
-  return ortPromise
-}
-
-export type ModelProgress = (fraction: number, stage: 'download' | 'load' | 'run') => void
-
-async function fetchModel(onProgress?: ModelProgress): Promise<ArrayBuffer> {
-  let cache: Cache | null = null
-  try {
-    cache = await caches.open(CACHE_NAME)
-    const hit = await cache.match(MODEL_URL)
-    if (hit) {
-      onProgress?.(1, 'download')
-      return hit.arrayBuffer()
-    }
-  } catch {
-    cache = null
-  }
-  const res = await fetch(MODEL_URL)
-  if (!res.ok || !res.body) throw new Error(`Model download failed (${res.status})`)
-  const total = Number(res.headers.get('content-length')) || 28_079_181
-  const reader = res.body.getReader()
-  const chunks: Uint8Array[] = []
-  let received = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    chunks.push(value)
-    received += value.length
-    onProgress?.(Math.min(0.99, received / total), 'download')
-  }
-  const buf = new Uint8Array(received)
-  let off = 0
-  for (const c of chunks) {
-    buf.set(c, off)
-    off += c.length
-  }
-  if (cache) {
-    try {
-      await cache.put(MODEL_URL, new Response(buf.slice(), { headers: { 'content-type': 'application/octet-stream' } }))
-    } catch {
-      /* quota exceeded or private mode; fine */
-    }
-  }
-  onProgress?.(1, 'download')
-  return buf.buffer
-}
-
-export async function isModelCached(): Promise<boolean> {
-  try {
-    const cache = await caches.open(CACHE_NAME)
-    return (await cache.match(MODEL_URL)) !== undefined
-  } catch {
-    return false
-  }
-}
-
-async function getSession(onProgress?: ModelProgress) {
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      const [ort, buf] = await Promise.all([loadOrt(), fetchModel(onProgress)])
-      onProgress?.(0, 'load')
-      const gpu = typeof navigator !== 'undefined' && 'gpu' in navigator
-      const attempts: (() => Promise<Session>)[] = [
-        () =>
-          ort.InferenceSession.create(buf, {
-            executionProviders: gpu ? ['webgpu', 'wasm'] : ['wasm'],
-            graphOptimizationLevel: 'all',
-          }),
-        () => ort.InferenceSession.create(buf, { executionProviders: ['wasm'] }),
-        () => {
-          ort.env.wasm.wasmPaths = ORT_CDN
-          return ort.InferenceSession.create(buf, { executionProviders: ['wasm'] })
-        },
-      ]
-      let session: Session | null = null
-      let lastError: unknown
-      for (const attempt of attempts) {
-        try {
-          session = await attempt()
-          break
-        } catch (e) {
-          lastError = e
-        }
-      }
-      if (!session) throw lastError instanceof Error ? lastError : new Error('Could not start the AI runtime')
-      onProgress?.(1, 'load')
-      return { ort, session }
-    })().catch((e) => {
-      sessionPromise = null
-      throw e
-    })
-  }
-  return sessionPromise
+export function isInpaintModelCached(): Promise<boolean> {
+  return isModelCached(MIGAN_MODEL)
 }
 
 function bbox(mask: Uint8Array, w: number, h: number) {
@@ -153,7 +52,7 @@ export async function aiInpaint(image: ImageData, mask: Uint8Array, onProgress?:
   const bb = bbox(mask, W, H)
   if (!bb) return out
 
-  const { ort, session } = await getSession(onProgress)
+  const { ort, session } = await getSession(MIGAN_MODEL, onProgress)
   onProgress?.(0, 'run')
 
   // Square crop: object plus context, at least 512 px when the image allows it.
@@ -197,7 +96,6 @@ export async function aiInpaint(image: ImageData, mask: Uint8Array, onProgress?:
       if (hit) maskT[y * N + x] = 0
     }
   }
-  // dilate by 2 px
   const dil = new Uint8Array(maskT)
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {

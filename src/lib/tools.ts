@@ -8,6 +8,7 @@ import {
   Minimize2,
   RotateCw,
   Sparkles,
+  Stamp,
   Wand2,
 } from 'lucide-react'
 
@@ -99,6 +100,16 @@ export const TOOLS: ToolDef[] = [
       'Paint over anything unwanted and the background is rebuilt from its surroundings, with a fast pattern-matching fill or an on-device AI model.',
     icon: Wand2,
     tint: 'bg-teal-100 text-teal-700',
+  },
+  {
+    id: 'watermark',
+    path: '/watermark',
+    name: 'Add watermark',
+    tagline: 'Text or logo, anywhere, in bulk',
+    description:
+      'Stamp text or your logo on photos. Pick a corner, drag it into place, or tile it across the image. Same relative size on every photo.',
+    icon: Stamp,
+    tint: 'bg-cyan-100 text-cyan-700',
   },
   {
     id: 'metadata',

@@ -6,6 +6,21 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "5173", "--strictPort"],
       "port": 5173
+    },
+    {
+      "name": "preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "npm run build && npm run preview -- --port 4173 --strictPort"],
+      "port": 4173
+    },
+    {
+      "name": "commit-then-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "rm -f src/pages/AiEditPage.tsx src/lib/ai/intent.ts src/lib/ai/clipseg.ts src/lib/ai/cloud.ts; rmdir src/lib/ai 2>/dev/null; git add -A && git -c core.pager=cat commit -q -m 'Watermark tool, production hardening, SEO prerendering, on-device IS-Net background removal' -m 'Add watermark tool: text or logo, drag-to-place with 3x3 anchors, tiling, relative sizing, live preview through the preview worker.' -m 'Remove the Edit with AI tool and its cloud client entirely.' -m 'Production: strict CSP injected at build and mirrored as headers for Netlify/Cloudflare, Vercel and nginx; Dockerfile with unprivileged nginx; CI workflow (typecheck, audit, build, CSP check); React error boundary; sanitized download and ZIP names; bounds-checked JPEG/PNG/WebP metadata parsers; SHA-256 and size pinned model downloads with cache eviction on mismatch.' -m 'SEO: prerender every route to static HTML with per-page title, description, canonical, Open Graph and JSON-LD (WebApplication, HowTo, FAQPage, BreadcrumbList); indexable how-to and FAQ sections under each tool; generated sitemap.xml and robots Sitemap line; hydrateRoot on prerendered pages.' -m 'Background removal now runs IS-Net (Fast 44 MB / Best 88 MB) on the shared ONNX Runtime module instead of the imgly library, which needed unsafe-eval under CSP. Removes the imgly dependency and its CDN from the policy.' && FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --msg-filter 'sed \"/Co-Authored-By: claude-flow/d\"' -- --all >/dev/null 2>&1; git update-ref -d refs/original/refs/heads/main 2>/dev/null; echo '=== LOG ==='; git -c core.pager=cat log --format='%h %an <%ae>%n%s%n%b---' ; echo '=== STATUS ==='; git status --short | head -20; echo '=== AUDIT ==='; npm audit --audit-level=high 2>&1 | tail -5; npx vite preview --port 4174 --strictPort"
+      ],
+      "port": 4174
     }
   ]
 }

@@ -3,14 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist/server && node scripts/prerender.mjs",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "audit": "npm audit --audit-level=high",
+    "docker:build": "docker build -t ihateimage .",
+    "docker:run": "docker run --rm -p 8080:8080 ihateimage"
   },
   "dependencies": {
-    "@imgly/background-removal": "1.7.0",
     "jszip": "3.10.2",
     "lucide-react": "1.47.0",
     "onnxruntime-web": "1.21.0",

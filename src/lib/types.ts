@@ -17,6 +17,32 @@ export type Op =
   | { type: 'adjust'; params: AdjustParams }
   /** mask is width*height bytes, non-zero = fill this pixel */
   | { type: 'inpaint'; mask: Uint8Array; width: number; height: number }
+  | { type: 'watermark'; spec: WatermarkSpec; /** worker-internal, decoded from spec.image */ bitmap?: ImageBitmap }
+
+export interface WatermarkSpec {
+  kind: 'text' | 'image'
+  text: string
+  /** CSS font family */
+  font: string
+  bold: boolean
+  color: string
+  /** Logo file for kind = 'image' */
+  image?: Blob
+  /** Text: font size as % of the image's shorter side. Image: logo width as % of image width. */
+  size: number
+  /** 0..1 */
+  opacity: number
+  /** degrees, counter-clockwise positive like CSS */
+  rotation: number
+  /** Center of the watermark as a fraction of image width/height (ignored when tiling) */
+  x: number
+  y: number
+  tile: boolean
+  /** Gap between tiles as a multiple of the watermark size */
+  tileGap: number
+  /** Soft drop shadow behind text for legibility on busy photos */
+  shadow: boolean
+}
 
 export interface EncodeOptions {
   format: OutputFormat
