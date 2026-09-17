@@ -12,6 +12,7 @@ cd "$(dirname "$0")/../.."
 STACK="${STACK:-ihateimage}"
 REGION="${AWS_REGION:-us-east-1}"   # CloudFront is global; certificates it uses must live in us-east-1.
 DOMAIN="${DOMAIN:-}"
+ALT_DOMAIN="${ALT_DOMAIN:-}"          # e.g. www.example.com; served and redirected to DOMAIN
 CERT_ARN="${CERT_ARN:-}"
 HOSTED_ZONE_ID="${HOSTED_ZONE_ID:-}"
 PRICE_CLASS="${PRICE_CLASS:-PriceClass_100}"
@@ -30,6 +31,7 @@ aws cloudformation deploy \
   --no-fail-on-empty-changeset \
   --parameter-overrides \
     "DomainName=$DOMAIN" \
+    "AlternateDomainName=$ALT_DOMAIN" \
     "CertificateArn=$CERT_ARN" \
     "HostedZoneId=$HOSTED_ZONE_ID" \
     "PriceClass=$PRICE_CLASS"

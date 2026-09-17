@@ -10,10 +10,14 @@ Parameters:
     Type: String
     Default: ''
     Description: Optional custom domain (e.g. tools.example.com). Leave empty to use the *.cloudfront.net URL.
+  AlternateDomainName:
+    Type: String
+    Default: ''
+    Description: Optional second hostname, typically www.<DomainName>. It is served too and redirected to DomainName.
   CertificateArn:
     Type: String
     Default: ''
-    Description: ACM certificate ARN in us-east-1 covering DomainName. Required when DomainName is set.
+    Description: ACM certificate ARN in us-east-1 covering DomainName (and AlternateDomainName). Required when DomainName is set.
   HostedZoneId:
     Type: String
     Default: ''
@@ -26,9 +30,15 @@ Parameters:
 
 Conditions:
   HasDomain: !Not [!Equals [!Ref DomainName, '']]
+  HasAlt: !And
+    - !Condition HasDomain
+    - !Not [!Equals [!Ref AlternateDomainName, '']]
   HasZone: !And
     - !Condition HasDomain
     - !Not [!Equals [!Ref HostedZoneId, '']]
+  HasZoneAlt: !And
+    - !Condition HasZone
+    - !Condition HasAlt
 
 Resources:
   SiteBucket:
@@ -73,7 +83,8 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # Maps /compress -> /compress/index.html (prerendered) and /dir/ -> /dir/index.html.
+  # 1. Redirects www.<domain> to <domain> so search engines see one canonical host.
+  # 2. Maps /compress -> /compress/index.html (prerendered) and /dir/ -> /dir/index.html.
   # Unknown paths miss in S3 and fall through to the SPA shell via CustomErrorResponses.
   RewriteFunction:
     Type: AWS::CloudFront::Function
@@ -81,11 +92,19 @@ Resources:
       Name: !Sub '${AWS::StackName}-clean-urls'
       AutoPublish: true
       FunctionConfig:
-        Comment: Clean URLs for prerendered pages
+        Comment: Canonical host redirect and clean URLs for prerendered pages
         Runtime: cloudfront-js-2.0
       FunctionCode: |
         function handler(event) {
           var request = event.request;
+          var host = request.headers.host && request.headers.host.value;
+          if (host && host.startsWith('www.')) {
+            return {
+              statusCode: 301,
+              statusDescription: 'Moved Permanently',
+              headers: { location: { value: 'https://' + host.slice(4) + request.uri } }
+            };
+          }
           var uri = request.uri;
           if (uri.endsWith('/')) {
             request.uri = uri + 'index.html';
@@ -144,7 +163,10 @@ Resources:
         DefaultRootObject: index.html
         Aliases: !If
           - HasDomain
-          - [!Ref DomainName]
+          - !If
+            - HasAlt
+            - [!Ref DomainName, !Ref AlternateDomainName]
+            - [!Ref DomainName]
           - !Ref AWS::NoValue
         ViewerCertificate: !If
           - HasDomain
@@ -199,6 +221,30 @@ Resources:
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  DnsRecordAltA:
+    Type: AWS::Route53::RecordSet
+    Condition: HasZoneAlt
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref AlternateDomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2
+        EvaluateTargetHealth: false
+
+  DnsRecordAltAAAA:
+    Type: AWS::Route53::RecordSet
+    Condition: HasZoneAlt
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref AlternateDomainName
       Type: AAAA
       AliasTarget:
         DNSName: !GetAtt Distribution.DomainName

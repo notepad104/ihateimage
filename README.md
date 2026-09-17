@@ -56,7 +56,9 @@ The script prints the `https://xxxx.cloudfront.net` URL. For a custom domain, re
 DOMAIN=tools.example.com CERT_ARN=arn:aws:acm:us-east-1:123456789012:certificate/... bash deploy/aws/deploy.sh
 ```
 
-Add `HOSTED_ZONE_ID=Z...` if the domain is in Route 53 and the alias records should be created for you.
+Add `HOSTED_ZONE_ID=Z...` if the domain is in Route 53 and the alias records should be created for you, and `ALT_DOMAIN=www.tools.example.com` to also serve `www` (it redirects to the bare domain).
+
+**Domain bought elsewhere (GoDaddy, Namecheap, …).** A bare domain (`example.xyz`) cannot be a CNAME, and most registrars lack ALIAS records, so host the DNS in Route 53 ($0.50/month) or Cloudflare (free, DNS-only mode) and point the registrar's nameservers there. With Route 53: create the hosted zone, switch the nameservers at the registrar, request the ACM certificate for both `example.xyz` and `www.example.xyz` in `us-east-1`, add its validation records to the zone, wait for `ISSUED`, then deploy with `DOMAIN`, `ALT_DOMAIN`, `CERT_ARN` and `HOSTED_ZONE_ID` set. With Cloudflare: add CNAME records for `@` and `www` pointing at the CloudFront hostname (DNS only, grey cloud), add the ACM validation CNAMEs, and deploy without `HOSTED_ZONE_ID`.
 
 **IAM user for deploying.** `deploy/aws/deploy-policy.json` is a least-privilege policy: it can manage the `ihateimage` CloudFormation stack and the resources it creates (buckets named `ihateimage-*`, the distribution, its function and headers policy), upload objects, and invalidate the cache. Nothing else in the account. Replace `ACCOUNT_ID` and `REGION`, then:
 
