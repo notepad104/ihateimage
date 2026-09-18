@@ -964,28 +964,46 @@ function edgeSupport(q: Quad, mag: Float32Array, w: number, h: number, thr: numb
 /** Assumed edge support for a side that runs along the image border. */
 const BORDER_SUPPORT = 0.6
 
-/** Coarse colour histogram (5 bits per channel) of the outer 6% of the image: what "background" looks like. */
-function borderHistogram(rgb: Uint8ClampedArray, w: number, h: number): { hist: Uint32Array; floor: number } {
-  const hist = new Uint32Array(32 * 32 * 32)
+interface Surfaces {
+  /** Colours seen in the outer 6% of the frame (5 bits per channel). */
+  border: Uint32Array
+  borderFloor: number
+  /** Colours over the whole image. */
+  all: Uint32Array
+  allFloor: number
+}
+
+/**
+ * What "background" can look like: any colour present at the frame edge, or
+ * any colour that covers a large share of the image (a mat or a lighter patch
+ * the page lies on). A header band on the page satisfies neither.
+ */
+function surfaceHistograms(rgb: Uint8ClampedArray, w: number, h: number): Surfaces {
+  const border = new Uint32Array(32 * 32 * 32)
+  const all = new Uint32Array(32 * 32 * 32)
   const bx = Math.max(2, Math.round(w * 0.06))
   const by = Math.max(2, Math.round(h * 0.06))
-  let n = 0
+  let nb = 0
   for (let y = 0; y < h; y++) {
     const edgeRow = y < by || y >= h - by
     for (let x = 0; x < w; x++) {
-      if (!edgeRow && x >= bx && x < w - bx) continue
       const i = (y * w + x) * 4
-      hist[((rgb[i] >> 3) << 10) | ((rgb[i + 1] >> 3) << 5) | (rgb[i + 2] >> 3)]++
-      n++
+      const bin = ((rgb[i] >> 3) << 10) | ((rgb[i + 1] >> 3) << 5) | (rgb[i + 2] >> 3)
+      all[bin]++
+      if (edgeRow || x < bx || x >= w - bx) {
+        border[bin]++
+        nb++
+      }
     }
   }
-  return { hist, floor: Math.max(2, n * 0.002) }
+  return { border, borderFloor: Math.max(2, nb * 0.002), all, allFloor: w * h * 0.08 }
 }
 
-function matchesBackground(bg: { hist: Uint32Array; floor: number }, r: number, g: number, b: number): boolean {
+function isSurfaceColour(s: Surfaces, r: number, g: number, b: number): boolean {
   const rb = r >> 3
   const gb = g >> 3
   const bb = b >> 3
+  let mass = 0
   for (let dr = -1; dr <= 1; dr++) {
     const rr = rb + dr
     if (rr < 0 || rr > 31) continue
@@ -995,20 +1013,23 @@ function matchesBackground(bg: { hist: Uint32Array; floor: number }, r: number, 
       for (let db = -1; db <= 1; db++) {
         const bbb = bb + db
         if (bbb < 0 || bbb > 31) continue
-        if (bg.hist[(rr << 10) | (gg << 5) | bbb] >= bg.floor) return true
+        const bin = (rr << 10) | (gg << 5) | bbb
+        if (s.border[bin] >= s.borderFloor) return true
+        mass += s.all[bin]
       }
     }
   }
-  return false
+  return mass >= s.allFloor
 }
 
 /**
- * Fraction of the pixels just outside the quad that look like the image
- * background (0..1). Separates the page outline from strong edges inside the
- * page, such as the inner edge of a coloured header band. Sides on the image
- * border count as neutral.
+ * Fraction of the pixels just outside the quad whose colour belongs to a large
+ * surface in the image (0..1). Separates the page outline from strong edges
+ * inside the page, such as the inner edge of a coloured header band, without
+ * assuming the page sits directly on whatever touches the frame edge (it may
+ * lie on a mat or a lighter patch). Sides on the image border count as neutral.
  */
-function backgroundMatch(q: Quad, rgb: Uint8ClampedArray, w: number, h: number, bg: { hist: Uint32Array; floor: number }): number {
+function backgroundMatch(q: Quad, rgb: Uint8ClampedArray, w: number, h: number, bg: Surfaces): number {
   const N = 24
   const d = Math.max(4, Math.max(w, h) * 0.03)
   const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4
@@ -1037,15 +1058,127 @@ function backgroundMatch(q: Quad, rgb: Uint8ClampedArray, w: number, h: number, 
       if (ox < 0 || oy < 0 || ox >= w || oy >= h) continue
       valid++
       const i = (oy * w + ox) * 4
-      if (matchesBackground(bg, rgb[i], rgb[i + 1], rgb[i + 2])) hits++
+      if (isSurfaceColour(bg, rgb[i], rgb[i + 1], rgb[i + 2])) hits++
     }
-    const side = valid < N / 2 ? 0.5 : hits / valid
+    // Half the samples matching is enough: the other half may land on the
+    // texture (speckles, grain) of an otherwise matching surface.
+    const side = valid < N / 2 ? 0.5 : Math.min(1, hits / valid / 0.5)
     total += side
     if (side < worst) worst = side
   }
   // One side facing page content (a header band) should hurt more than the
   // average alone suggests: every side of a real outline faces background.
   return 0.6 * (total / 4) + 0.4 * worst
+}
+
+/**
+ * Does the inside of the quad look like paper (0..1)? Paper is the brightest
+ * large thing in a document photo and is smooth between the ink, while a
+ * speckled counter or a wooden desk is neither. Samples come from a band just
+ * inside each side, not the whole interior: a candidate that merely contains
+ * the page (a mat, a lighter patch of counter) would otherwise borrow the
+ * page's brightness. Bright end of the samples against the image's bright
+ * end, averaged over the sides.
+ */
+function interiorPaper(q: Quad, gray: Float32Array, w: number, h: number, brightRef: number): number {
+  const G = 12
+  const d = Math.max(3, Math.max(w, h) * 0.035)
+  const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4
+  const cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4
+  const sideScores: number[] = []
+  for (let side = 0; side < 4; side++) {
+    const a = q[side]
+    const b = q[(side + 1) % 4]
+    const len = dist(a, b) || 1
+    let nx = -(b.y - a.y) / len
+    let ny = (b.x - a.x) / len
+    // Point the normal inwards.
+    if ((cx - (a.x + b.x) / 2) * nx + (cy - (a.y + b.y) / 2) * ny < 0) {
+      nx = -nx
+      ny = -ny
+    }
+    const lums: number[] = []
+    for (let k = 0; k < 2 * G; k++) {
+      const t = 0.08 + (0.84 * (k + 0.5)) / (2 * G)
+      const x = Math.round(a.x + (b.x - a.x) * t + nx * d)
+      const y = Math.round(a.y + (b.y - a.y) * t + ny * d)
+      if (x < 2 || y < 2 || x >= w - 2 || y >= h - 2) continue
+      lums.push(gray[y * w + x])
+    }
+    if (lums.length < G) continue
+    lums.sort((p, r) => p - r)
+    // 70th percentile: paper is the bright majority even near dense print. The
+    // ramp is steep because paper is the brightest large thing in the frame; a
+    // light counter or mat sits a notch below it. (Flatness was tried as a
+    // second cue and dropped: the base colour between speckles is flat too.)
+    const hi = lums[Math.floor(lums.length * 0.7)]
+    sideScores.push(Math.max(0, Math.min(1, (hi / Math.max(1, brightRef) - 0.82) / 0.16)))
+  }
+  if (sideScores.length < 2) return 0.5
+  return sideScores.reduce((s, v) => s + v, 0) / sideScores.length
+}
+
+/**
+ * How much the quad's sides keep going past its corners (0..1). Where two
+ * page edges meet, both stop; a side that continues beyond a corner belongs to
+ * something larger (the desk mat the page lies on, the page around a text
+ * block or a header band). Extensions that leave the image count as stopped.
+ */
+function cornerContinuation(q: Quad, g: Gradient, w: number, h: number, thr: number): number {
+  const N = 10
+  let total = 0
+  // Signed response across the side's normal at the strongest of three
+  // positions within a pixel of the line. Sign and position both have to match
+  // the side's own edge, so speckle beyond a corner does not count.
+  const response = (x0: number, y0: number, nx: number, ny: number) => {
+    let best = 0
+    for (let o = -1; o <= 1; o++) {
+      const x = Math.round(x0 + nx * o)
+      const y = Math.round(y0 + ny * o)
+      if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue
+      const i = y * w + x
+      const r = g.gx[i] * nx + g.gy[i] * ny
+      if (Math.abs(r) > Math.abs(best)) best = r
+    }
+    return best
+  }
+  for (let s = 0; s < 4; s++) {
+    const a = q[s]
+    const b = q[(s + 1) % 4]
+    const len = dist(a, b) || 1
+    const dx = (b.x - a.x) / len
+    const dy = (b.y - a.y) / len
+    const nx = -dy
+    const ny = dx
+    // What this side's own edge looks like: mean signed response.
+    let along = 0
+    for (let k = 0; k < N; k++) {
+      const t = len * (0.1 + (0.8 * (k + 0.5)) / N)
+      along += response(a.x + dx * t, a.y + dy * t, nx, ny)
+    }
+    along /= N
+    const sign = along >= 0 ? 1 : -1
+    const need = Math.max(Math.abs(along) * 0.7, thr * 0.2)
+    const ext = Math.max(5, len * 0.07)
+    for (const [ox, oy, sx, sy] of [
+      [b.x, b.y, dx, dy],
+      [a.x, a.y, -dx, -dy],
+    ]) {
+      let hits = 0
+      for (let k = 0; k < N; k++) {
+        const t = 3 + (ext * (k + 0.5)) / N
+        const x = ox + sx * t
+        const y = oy + sy * t
+        if (x < 2 || y < 2 || x >= w - 3 || y >= h - 3) continue // left the image: stopped
+        const r = response(x, y, nx, ny)
+        if (r * sign >= need) hits++
+      }
+      // A real continuation is present at practically every sample; even dense
+      // speckle rarely lines up at nine of ten, and scattered hits count for little.
+      total += hits >= N * 0.9 ? 1 : (hits / N) * 0.2
+    }
+  }
+  return total / 8
 }
 
 /**
@@ -1395,8 +1528,8 @@ export interface DetectDebug {
   /** A known-good outline to score alongside the candidates (tuning aid). */
   truth?: Quad
   lines?: Line[]
-  scored?: { q: Quad; support: number; contrast: number; bgMatch: number; frac: number; score: number }[]
-  truthScore?: { support: number; contrast: number; bgMatch: number; frac: number; score: number }
+  scored?: { q: Quad; support: number; contrast: number; bgMatch: number; paper: number; cont: number; frac: number; score: number }[]
+  truthScore?: { support: number; contrast: number; bgMatch: number; paper: number; cont: number; frac: number; score: number }
   /** Score of the returned quad */
   bestScore?: number
 }
@@ -1405,8 +1538,10 @@ export function detectQuadClassic(img: ImageData, debug?: DetectDebug): Quad | n
   const w = img.width
   const h = img.height
   if (w < 32 || h < 32) return null
-  const gray = blur3(blur3(toGray(img), w, h), w, h)
-  const { gx, gy, mag } = colorGradient(img, w, h)
+  const rawGray = toGray(img)
+  const gray = blur3(blur3(rawGray, w, h), w, h)
+  const grad = colorGradient(img, w, h)
+  const { gx, gy, mag } = grad
   const thr = Math.max(8, percentile(mag, 0.85))
   // Step edges only (no text strokes or rules): what page outlines are made of.
   const stepMag = suppressThin(gx, gy, mag, w, h, thr)
@@ -1483,14 +1618,19 @@ export function detectQuadClassic(img: ImageData, debug?: DetectDebug): Quad | n
   candidates.push(...quadsFromLines(lines, w, h, 1500))
   if (debug) debug.lines = lines
 
-  const bg = borderHistogram(img.data, w, h)
+  const bg = surfaceHistograms(img.data, w, h)
+  const brightRef = percentile(gray, 0.95)
   const evaluate = (q: Quad) => {
     const frac = quadArea(q) / (w * h)
     const support = edgeSupport(q, mag, w, h, thr)
     const contrast = sideContrast(q, img.data, w, h)
     const bgMatch = backgroundMatch(q, img.data, w, h, bg)
-    const score = support * (0.4 + 0.6 * contrast) * (0.5 + 0.5 * bgMatch) * (0.75 + 0.25 * frac)
-    return { support, contrast, bgMatch, frac, score }
+    // Texture is judged on the unblurred image: a speckled counter must not read as flat.
+    const paper = interiorPaper(q, rawGray, w, h, brightRef)
+    const cont = cornerContinuation(q, grad, w, h, thr)
+    const score =
+      support * (0.4 + 0.6 * contrast) * (0.6 + 0.4 * bgMatch) * (0.55 + 0.45 * paper) * (1 - 0.8 * cont) * (0.85 + 0.15 * frac)
+    return { support, contrast, bgMatch, paper, cont, frac, score }
   }
   if (debug?.truth) debug.truthScore = evaluate(debug.truth)
   if (debug) debug.scored = []

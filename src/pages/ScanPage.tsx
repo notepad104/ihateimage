@@ -154,7 +154,6 @@ export function ScanPage() {
         rotation: s[file.id]?.rotation ?? 0,
         busy: false,
         note: quad ? (source === 'fast' && engineRef.current === 'ai' ? note : undefined) : (note ?? 'Could not find the page edges. Drag the corners onto the page.'),
-        // note stays undefined when the fast outline simply out-scored the AI one
       },
     }))
   }, [])
@@ -287,6 +286,7 @@ export function ScanPage() {
                       <Sparkles className="h-3.5 w-3.5" /> AI
                     </span>
                   ),
+                  title: DOC_MODEL.sizeLabel,
                 },
                 {
                   value: 'fast',
@@ -300,7 +300,7 @@ export function ScanPage() {
             />
             <p className="text-xs text-slate-500">
               {engine === 'ai'
-                ? `A small neural network (DocAligner) locates the four corners, even on busy backgrounds. ${
+                ? `A small neural network (DocAligner) locates the four corners, then zooms in for precision. ${
                     modelCached ? 'Model is already downloaded.' : `Downloads a ${DOC_MODEL.sizeLabel} model once; runs on your device.`
                   }`
                 : 'Classic edge and brightness analysis. Instant and offline, best on plain backgrounds.'}

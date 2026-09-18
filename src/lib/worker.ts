@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { applyOps, decode, encode, fromBitmap, prepareOps, releaseOps, resize } from './image-ops'
-import { detectQuadClassic, refineQuad, scaleQuad, type DetectDebug } from './scan'
+import { detectQuadClassic, isReasonableQuad, refineQuad, scaleQuad } from './scan'
 import type { DetectResponse, PreviewResponse, ProcessResponse, Quad, WorkerRequest } from './types'
 
 /** Longest side of the working copy used for page-outline detection. */
@@ -97,21 +97,22 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const bitmap = await decode(req.source)
         const full = fromBitmap(bitmap)
         bitmap.close()
-        const small = fitCanvas(full, DETECT_MAX)
-        const sx = small.width / full.width
-        const sy = small.height / full.height
-        const dbg: DetectDebug = {}
-        // Snap the caller's outline first so it competes on equal terms.
-        const seed = req.seed ? refineOnCopy(full, req.seed) : null
-        if (seed) dbg.truth = scaleQuad(seed, sx, sy)
-        const classic = detectQuadClassic(imageDataOf(small), dbg)
-        let quad: Quad | null = seed
+        // A seed (the model's outline) is authoritative: snap it to the edges
+        // and return it. The classic detector only runs without a seed, or when
+        // snapping produced something that is no longer a plausible page.
+        let quad: Quad | null = null
         let source: 'seed' | 'classic' = 'seed'
-        // Keep the seed unless the classic outline is clearly more page-like.
-        const seedScore = dbg.truthScore?.score ?? 0
-        if (classic && (!seed || seedScore < 0.85 * (dbg.bestScore ?? 0))) {
-          quad = refineOnCopy(full, scaleQuad(classic, 1 / sx, 1 / sy))
-          source = 'classic'
+        if (req.seed) {
+          const snapped = refineOnCopy(full, req.seed)
+          quad = isReasonableQuad(snapped, full.width, full.height) ? snapped : req.seed
+        }
+        if (!quad) {
+          const small = fitCanvas(full, DETECT_MAX)
+          const classic = detectQuadClassic(imageDataOf(small))
+          if (classic) {
+            quad = refineOnCopy(full, scaleQuad(classic, full.width / small.width, full.height / small.height))
+            source = 'classic'
+          }
         }
         const res: DetectResponse = { id: req.id, ok: true, quad, width: full.width, height: full.height, source }
         self.postMessage(res)
