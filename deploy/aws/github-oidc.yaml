@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Lets GitHub Actions deploy ihateimage without long-lived AWS keys. Creates the
+  GitHub OIDC identity provider (unless the account already has one) and a role
+  that only the given repository's main branch can assume. The role carries the
+  same least-privilege deploy policy as the ihateimage-deploy user.
+
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: notepad104
+  GitHubRepo:
+    Type: String
+    Default: ihateimage
+  Branch:
+    Type: String
+    Default: main
+  DeployPolicyArn:
+    Type: String
+    Description: Managed policy created from deploy/aws/deploy-policy.json.
+    Default: ''
+  CreateOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Set to false if this account already has the token.actions.githubusercontent.com provider.
+
+Conditions:
+  MakeProvider: !Equals [!Ref CreateOidcProvider, 'true']
+  HasPolicyArn: !Not [!Equals [!Ref DeployPolicyArn, '']]
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: MakeProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      # AWS validates GitHub's certificate chain itself; the thumbprint is required by the API but not relied upon.
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${GitHubRepo}-github-deploy'
+      Description: Assumed by GitHub Actions on pushes to main to deploy the site.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - MakeProvider
+                - !Ref GitHubOidcProvider
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${Branch}'
+      ManagedPolicyArns:
+        - !If
+          - HasPolicyArn
+          - !Ref DeployPolicyArn
+          - !Sub 'arn:aws:iam::${AWS::AccountId}:policy/ihateimage-deploy'
+
+Outputs:
+  RoleArn:
+    Description: Store this as the AWS_DEPLOY_ROLE_ARN repository variable in GitHub.
+    Value: !GetAtt DeployRole.Arn

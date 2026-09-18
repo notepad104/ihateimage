@@ -20,4 +20,7 @@ npm-debug.log*
 # Tooling
 .claude/settings.local.json
 .claude/commit-msg.txt
+.claude/proven-config.json
+.claude/.proven-config-version
+.claude-flow/
 graphify-out

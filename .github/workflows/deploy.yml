@@ -1,0 +1,57 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; a newer push cancels an in-flight one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+permissions:
+  id-token: write # OIDC token to assume the AWS role; no stored AWS keys
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Dependency audit (high and above)
+        run: npm audit --audit-level=high
+
+      - name: Assume the deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build, update stack, upload, invalidate
+        env:
+          DOMAIN: ${{ vars.DOMAIN }}
+          ALT_DOMAIN: ${{ vars.ALT_DOMAIN }}
+          CERT_ARN: ${{ vars.CERT_ARN }}
+          HOSTED_ZONE_ID: ${{ vars.HOSTED_ZONE_ID }}
+          AWS_REGION: us-east-1
+        run: bash deploy/aws/deploy.sh
+
+      - name: Smoke test
+        run: |
+          URL="${{ vars.DOMAIN && format('https://{0}', vars.DOMAIN) || '' }}"
+          if [ -z "$URL" ]; then
+            URL=$(aws cloudformation describe-stacks --stack-name ihateimage --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='SiteUrl'].OutputValue" --output text)
+          fi
+          echo "Checking $URL"
+          curl -fsSIL "$URL/compress" | grep -i "content-security-policy" >/dev/null
+          curl -fsSL "$URL/sitemap.xml" | grep -q "<loc>"

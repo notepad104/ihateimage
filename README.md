@@ -73,6 +73,14 @@ aws configure --profile ihateimage      # paste the key; then: AWS_PROFILE=ihate
 
 Run those as your admin identity once; deploy with the `ihateimage` profile afterwards. If you deploy from GitHub Actions, attach the same policy to an IAM role trusted by GitHub's OIDC provider instead of creating access keys. The last statement (ACM and Route 53) is only needed for a custom domain and can be deleted otherwise.
 
+**Continuous deployment from GitHub.** Pushes to `main` run `.github/workflows/deploy.yml`, which assumes an AWS role through GitHub's OIDC provider (no stored keys), runs `deploy/aws/deploy.sh`, and smoke-tests the live site. One-time setup as an admin:
+
+```bash
+aws cloudformation deploy --region us-east-1 --stack-name ihateimage-ci --capabilities CAPABILITY_NAMED_IAM --template-file deploy/aws/github-oidc.yaml --parameter-overrides GitHubOwner=notepad104 GitHubRepo=ihateimage
+```
+
+Add `CreateOidcProvider=false` if the account already has the `token.actions.githubusercontent.com` provider. Then copy the `RoleArn` output into the repository variable `AWS_DEPLOY_ROLE_ARN`, and set `DOMAIN`, `ALT_DOMAIN`, `CERT_ARN`, `HOSTED_ZONE_ID` as repository variables too (Settings → Secrets and variables → Actions → Variables, or `gh variable set`). Pull requests run `ci.yml` (typecheck, audit, build) without deploying.
+
 Cost: CloudFront's always-free tier covers 1 TB/month of transfer, 10M requests and 2M function invocations; S3 storage for the ~30 MB bundle is about a cent. Without a custom domain the bill rounds to $0. With one, Route 53 adds $0.50/month per hosted zone plus the domain registration. The AI models are downloaded from Hugging Face, not from your bucket, so they don't count against your transfer.
 
 ## Security notes
