@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { formatBytes, labelForMime } from '../lib/format'
 import type { LoadedFile } from '../lib/types'
 import { cx } from './ui'
@@ -9,12 +10,15 @@ export function FileGrid({
   onSelect,
   onRemove,
   disabled,
+  badge,
 }: {
   files: LoadedFile[]
   selectedId: string | null
   onSelect: (id: string) => void
   onRemove: (id: string) => void
   disabled?: boolean
+  /** Optional small status pill drawn over each thumbnail. */
+  badge?: (file: LoadedFile) => ReactNode
 }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -30,7 +34,7 @@ export function FileGrid({
                 selected ? 'border-brand-500 ring-2 ring-brand-500/40' : 'border-slate-200 hover:shadow',
               )}
             >
-              <div className="checker aspect-square w-full">
+              <div className="checker relative aspect-square w-full">
                 <img
                   src={f.url}
                   alt={f.name}
@@ -38,6 +42,7 @@ export function FileGrid({
                   loading="lazy"
                   decoding="async"
                 />
+                {badge && <div className="absolute left-1.5 top-1.5">{badge(f)}</div>}
               </div>
               <div className="px-2.5 py-2">
                 <p className="truncate text-xs font-medium text-slate-800" title={f.name}>

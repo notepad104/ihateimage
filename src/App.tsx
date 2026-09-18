@@ -12,6 +12,7 @@ import { RemoveBackgroundPage } from './pages/RemoveBackgroundPage'
 import { RemoveObjectsPage } from './pages/RemoveObjectsPage'
 import { ResizePage } from './pages/ResizePage'
 import { RotatePage } from './pages/RotatePage'
+import { ScanPage } from './pages/ScanPage'
 import { WatermarkPage } from './pages/WatermarkPage'
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
         <Route path="/aspect-ratio" element={<AspectRatioPage />} />
         <Route path="/convert" element={<ConvertPage />} />
         <Route path="/rotate" element={<RotatePage />} />
+        <Route path="/scan-document" element={<ScanPage />} />
         <Route path="/remove-background" element={<RemoveBackgroundPage />} />
         <Route path="/beautify" element={<BeautifyPage />} />
         <Route path="/remove-objects" element={<RemoveObjectsPage />} />

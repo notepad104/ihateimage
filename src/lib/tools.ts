@@ -7,6 +7,7 @@ import {
   Maximize2,
   Minimize2,
   RotateCw,
+  ScanLine,
   Sparkles,
   Stamp,
   Wand2,
@@ -70,6 +71,16 @@ export const TOOLS: ToolDef[] = [
     description: 'Rotate in 90° steps and mirror horizontally or vertically. Fixes sideways photos in one click.',
     icon: RotateCw,
     tint: 'bg-rose-100 text-rose-700',
+  },
+  {
+    id: 'scan',
+    path: '/scan-document',
+    name: 'Scan document',
+    tagline: 'Photo → flat, clean scan',
+    description:
+      'Photograph a page, receipt or whiteboard. The edges are found automatically, the perspective is straightened and the paper is whitened, like a scanner app, on your device.',
+    icon: ScanLine,
+    tint: 'bg-orange-100 text-orange-700',
   },
   {
     id: 'remove-bg',

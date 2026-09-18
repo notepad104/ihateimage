@@ -1,4 +1,4 @@
-import type { Op, PreviewResponse, ProcessRequest, ProcessResponse, WorkerRequest, WorkerResponse } from './types'
+import type { DetectResponse, Op, PreviewResponse, ProcessRequest, ProcessResponse, Quad, WorkerRequest, WorkerResponse } from './types'
 
 type Pending = {
   resolve: (r: ProcessResponse) => void
@@ -127,10 +127,30 @@ class PreviewWorker {
   evict(key: string) {
     void this.send({ kind: 'evict', id: nextId('pv'), key })
   }
+
+  async detect(source: Blob, seed?: Quad): Promise<{ quad: Quad | null; width: number; height: number }> {
+    const res = (await this.send({ kind: 'detect', id: nextId('dt'), source, seed })) as DetectResponse
+    if (!res.ok) throw new Error(res.error)
+    return { quad: res.quad, width: res.width, height: res.height }
+  }
 }
 
 let preview: PreviewWorker | null = null
 export function getPreviewWorker(): PreviewWorker {
   if (!preview) preview = new PreviewWorker()
   return preview
+}
+
+/** Classic (non-ML) page-outline detection, off the main thread. Quad in source pixels, edge-snapped. */
+export function detectDocumentFast(source: Blob): Promise<Quad | null> {
+  return getPreviewWorker()
+    .detect(source)
+    .then((r) => r.quad)
+}
+
+/** Snap a rough outline (source pixels) onto the paper edges. */
+export function refineDocumentQuad(source: Blob, quad: Quad): Promise<Quad> {
+  return getPreviewWorker()
+    .detect(source, quad)
+    .then((r) => r.quad ?? quad)
 }

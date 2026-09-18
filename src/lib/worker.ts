@@ -1,6 +1,24 @@
 /// <reference lib="webworker" />
 import { applyOps, decode, encode, fromBitmap, prepareOps, releaseOps, resize } from './image-ops'
-import type { PreviewResponse, ProcessResponse, WorkerRequest } from './types'
+import { detectQuadClassic, refineQuad, scaleQuad } from './scan'
+import type { DetectResponse, PreviewResponse, ProcessResponse, Quad, WorkerRequest } from './types'
+
+/** Longest side of the working copy used for page-outline detection. */
+const DETECT_MAX = 480
+/** Longest side of the working copy used to snap corners onto edges. */
+const REFINE_MAX = 1400
+
+function imageDataOf(canvas: OffscreenCanvas): ImageData {
+  return canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+/** Refine `quad` (full-resolution pixels) on a medium-sized copy of the image. */
+function refineOnCopy(full: OffscreenCanvas, quad: Quad): Quad {
+  const copy = fitCanvas(full, REFINE_MAX)
+  const s = copy.width / full.width
+  const refined = refineQuad(imageDataOf(copy), scaleQuad(quad, s, s))
+  return scaleQuad(refined, 1 / s, 1 / s)
+}
 
 /** Downscaled sources kept for live previews, keyed by the page-provided key. */
 const previewCache = new Map<string, OffscreenCanvas>()
@@ -72,6 +90,21 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       case 'evict': {
         previewCache.delete(req.key)
         const res: PreviewResponse = { id: req.id, ok: true, width: 0, height: 0 }
+        self.postMessage(res)
+        return
+      }
+      case 'detect': {
+        const bitmap = await decode(req.source)
+        const full = fromBitmap(bitmap)
+        bitmap.close()
+        let quad: Quad | null = req.seed ?? null
+        if (!quad) {
+          const small = fitCanvas(full, DETECT_MAX)
+          const found = detectQuadClassic(imageDataOf(small))
+          quad = found ? scaleQuad(found, full.width / small.width, full.height / small.height) : null
+        }
+        if (quad) quad = refineOnCopy(full, quad)
+        const res: DetectResponse = { id: req.id, ok: true, quad, width: full.width, height: full.height }
         self.postMessage(res)
         return
       }

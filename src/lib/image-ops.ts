@@ -4,7 +4,8 @@
  */
 import { applyAdjust, type AdjustParams } from './adjust'
 import { inpaint } from './inpaint'
-import type { EncodeOptions, Op, OutputFormat, WatermarkSpec } from './types'
+import { scaleQuad, scanFilter, warp, warpOutputSize } from './scan'
+import type { EncodeOptions, Op, OutputFormat, Quad, WatermarkSpec } from './types'
 
 type Ctx2D = OffscreenCanvasRenderingContext2D
 
@@ -114,6 +115,28 @@ export function inpaintCanvas(src: OffscreenCanvas, mask: Uint8Array, mw: number
   const img = ctx.getImageData(0, 0, src.width, src.height)
   const out = inpaint(img, mask)
   ctx.putImageData(out, 0, 0)
+  return src
+}
+
+/** Perspective-correct a quad given as 0..1 fractions of the canvas. */
+export function warpCanvas(src: OffscreenCanvas, quad: Quad, aspect: number): OffscreenCanvas {
+  const ctx = src.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
+  const q = scaleQuad(quad, src.width, src.height)
+  const { width, height } = warpOutputSize(q, aspect)
+  const img = ctx.getImageData(0, 0, src.width, src.height)
+  const out = warp(img, q, width, height)
+  const [canvas, octx] = makeCanvas(width, height)
+  octx.putImageData(out, 0, 0)
+  return canvas
+}
+
+export function scanFilterCanvas(src: OffscreenCanvas, strength: number): OffscreenCanvas {
+  const ctx = src.getContext('2d')
+  if (!ctx) throw new Error('2D canvas context unavailable')
+  const img = ctx.getImageData(0, 0, src.width, src.height)
+  scanFilter(img, strength)
+  ctx.putImageData(img, 0, 0)
   return src
 }
 
@@ -239,6 +262,10 @@ export function applyOp(src: OffscreenCanvas, op: Op): OffscreenCanvas {
       return flip(src, op.horizontal, op.vertical)
     case 'flatten':
       return flatten(src, op.color)
+    case 'warp':
+      return warpCanvas(src, op.quad, op.aspect)
+    case 'scanFilter':
+      return scanFilterCanvas(src, op.strength)
   }
 }
 

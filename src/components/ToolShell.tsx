@@ -94,6 +94,8 @@ export interface ToolShellProps {
    * every file with the current options (e.g. after changing output format).
    */
   resultsPanel?: (ctx: { rerun: () => void; busy: boolean }) => ReactNode
+  /** Offer a "Take a photo" button next to the file picker. */
+  camera?: boolean
 }
 
 type Stage = 'ready' | 'processing' | 'done'
@@ -112,6 +114,7 @@ export function ToolShell({
   onReset,
   statusText,
   resultsPanel,
+  camera = false,
 }: ToolShellProps) {
   const [stage, setStage] = useState<Stage>('ready')
   const [jobs, setJobs] = useState<Record<string, JobState>>({})
@@ -237,7 +240,7 @@ export function ToolShell({
       )}
 
       {files.files.length === 0 ? (
-        <DropZone onFiles={(list) => void files.add(list)} multiple={multiple} busy={files.loading} />
+        <DropZone onFiles={(list) => void files.add(list)} multiple={multiple} busy={files.loading} camera={camera} />
       ) : stage === 'ready' ? (
         <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
           <div className="space-y-4">
@@ -249,7 +252,7 @@ export function ToolShell({
                 onRemove={files.remove}
               />
             )}
-            {multiple && <DropZone compact onFiles={(list) => void files.add(list)} busy={files.loading} />}
+            {multiple && <DropZone compact onFiles={(list) => void files.add(list)} busy={files.loading} camera={camera} />}
             {!multiple && (
               <div className="flex justify-end">
                 <Button variant="ghost" size="sm" onClick={startOver}>

@@ -18,6 +18,23 @@ export type Op =
   /** mask is width*height bytes, non-zero = fill this pixel */
   | { type: 'inpaint'; mask: Uint8Array; width: number; height: number }
   | { type: 'watermark'; spec: WatermarkSpec; /** worker-internal, decoded from spec.image */ bitmap?: ImageBitmap }
+  /**
+   * Perspective-correct the quadrilateral `quad` (corners as 0..1 fractions of
+   * the source, TL/TR/BR/BL) into an upright rectangle of the given width/height
+   * `aspect`. Output size is derived from the quad's pixel extent at apply time,
+   * so the same op works on a downscaled preview and the full image.
+   */
+  | { type: 'warp'; quad: Quad; aspect: number }
+  /** Document-scan look: whiten the paper, lift contrast. strength 0..1 */
+  | { type: 'scanFilter'; strength: number }
+
+export interface Point {
+  x: number
+  y: number
+}
+
+/** Four corners in order: top-left, top-right, bottom-right, bottom-left. */
+export type Quad = [Point, Point, Point, Point]
 
 export interface WatermarkSpec {
   kind: 'text' | 'image'
@@ -99,13 +116,29 @@ export interface PreviewEvictRequest {
   key: string
 }
 
-export type WorkerRequest = ProcessRequest | PreviewCacheRequest | PreviewRenderRequest | PreviewEvictRequest
+/**
+ * Find the document outline in `source` with the classic (non-ML) detector,
+ * or, when `seed` is given (source pixels), only snap that outline onto the
+ * nearby edges.
+ */
+export interface DetectRequest {
+  kind: 'detect'
+  id: string
+  source: Blob
+  seed?: Quad
+}
+
+export type WorkerRequest = ProcessRequest | PreviewCacheRequest | PreviewRenderRequest | PreviewEvictRequest | DetectRequest
 
 export type PreviewResponse =
   | { id: string; ok: true; bitmap?: ImageBitmap; width: number; height: number }
   | { id: string; ok: false; error: string }
 
-export type WorkerResponse = ProcessResponse | PreviewResponse
+export type DetectResponse =
+  | { id: string; ok: true; quad: Quad | null; width: number; height: number }
+  | { id: string; ok: false; error: string }
+
+export type WorkerResponse = ProcessResponse | PreviewResponse | DetectResponse
 
 export interface LoadedFile {
   id: string

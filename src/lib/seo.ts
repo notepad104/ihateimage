@@ -41,7 +41,7 @@ export const HOME_SEO: PageSeo = {
     'Compress, resize, crop, convert, watermark and clean up photos 100% in your browser. Free image editor with no uploads, no sign-up and no tracking.',
   h1: 'Every tool you need to work with images, without giving them away',
   intro:
-    'ihateimage is a free online image editor that never uploads your files. Compress and resize photos, crop to any aspect ratio, convert between JPG, PNG, WebP and AVIF, remove backgrounds and objects, add watermarks and strip GPS metadata, all on your own device.',
+    'ihateimage is a free online image editor that never uploads your files. Compress and resize photos, crop to any aspect ratio, convert between JPG, PNG, WebP and AVIF, scan documents from photos, remove backgrounds and objects, add watermarks and strip GPS metadata, all on your own device.',
   steps: ['Pick a tool', 'Drop your images, even hundreds at once', 'Adjust the settings with a live preview', 'Download the results or a ZIP'],
   faqs: [
     PRIVACY_FAQ,
@@ -55,7 +55,7 @@ export const HOME_SEO: PageSeo = {
     },
     {
       q: 'Does it work offline?',
-      a: 'After the first visit the app itself works offline. The two AI tools download their models once and keep them cached in your browser.',
+      a: 'After the first visit the app itself works offline. The AI tools download their models once and keep them cached in your browser.',
     },
   ],
   related: TOOLS.map((t) => t.id),
@@ -141,6 +141,38 @@ export const TOOL_SEO: Record<string, PageSeo> = {
     steps: ['Drop your images', 'Rotate left or right, flip horizontally or vertically', 'Check the preview', 'Download'],
     faqs: [PRIVACY_FAQ, { q: 'Does rotating a JPG lose quality?', a: 'The image is re-encoded once at high quality; the difference is invisible. Choose PNG output for a lossless result.' }],
     related: ['aspect', 'resize', 'beautify'],
+  },
+  scan: {
+    path: '/scan-document',
+    toolId: 'scan',
+    title: 'Scan Documents from Photos Online, No Upload — ihateimage',
+    description:
+      'Turn photos of documents, receipts and whiteboards into flat, clean scans. Automatic edge detection, perspective fix and paper whitening, all in your browser.',
+    h1: 'Scan document',
+    intro:
+      'Take a photo of a page or pick one from your gallery. The page outline is detected on your device, the perspective is corrected so the page is flat and upright, and a scanner-style filter whitens the paper and sharpens the ink. Corners can be nudged by hand before you save.',
+    steps: [
+      'Take a photo or drop images of documents',
+      'Check the detected corners, drag them if needed',
+      'Set the scan strength and rotate if the page is sideways',
+      'Download the scans, one image per photo or a ZIP',
+    ],
+    faqs: [
+      PRIVACY_FAQ,
+      {
+        q: 'How are the page edges found?',
+        a: 'Two detectors are built in. “AI” runs a small corner-detection network (DocAligner, about 5 MB, downloaded once) on your device; “Fast” uses classic edge and region analysis with no download. Either way you can fix the corners by hand.',
+      },
+      {
+        q: 'Why is my scan the wrong shape?',
+        a: 'The real proportions of the page are estimated from the camera perspective. If a corner sits on the wrong point the estimate is off; drag the corners onto the true page corners and the shape corrects itself.',
+      },
+      {
+        q: 'Can I scan several pages at once?',
+        a: 'Yes. Add as many photos as you like; each one gets its own corners and becomes its own scanned image, and you can download them together as a ZIP.',
+      },
+    ],
+    related: ['compress', 'convert', 'rotate'],
   },
   'remove-bg': {
     path: '/remove-background',

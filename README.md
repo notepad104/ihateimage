@@ -1,13 +1,14 @@
 # ihateimage
 
-Free image tools that run entirely in your browser: compress, resize, crop to a ratio, convert, rotate, beautify, add watermarks, remove objects or backgrounds, and view or strip EXIF and GPS data. Nothing is uploaded. No accounts, no analytics.
+Free image tools that run entirely in your browser: compress, resize, crop to a ratio, convert, rotate, scan documents from photos, beautify, add watermarks, remove objects or backgrounds, and view or strip EXIF and GPS data. Nothing is uploaded. No accounts, no analytics.
 
 Live at https://ihateimage.xyz.
 
 ## How it works
 
 - Pixel work runs in Web Workers with OffscreenCanvas on the user's device.
-- The two AI features (background removal, object fill) run on-device through ONNX Runtime Web. Their models download once from Hugging Face and are cached; every model file is pinned by SHA-256.
+- The AI features (background removal, object fill, document corner detection) run on-device through ONNX Runtime Web. Their models download once from Hugging Face and are cached; every model file is pinned by SHA-256.
+- Document scanning finds the page outline (classic edge analysis or the DocAligner model), estimates the page's real proportions from the perspective, warps it flat and whitens the paper.
 - The production bundle ships with a strict Content Security Policy and no third-party scripts.
 - Every route is prerendered to static HTML at build time with its own title, description and structured data, plus a generated sitemap, so search engines see real pages.
 

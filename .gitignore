@@ -21,6 +21,7 @@ npm-debug.log*
 .claude/settings.local.json
 .claude/commit-msg.txt
 .claude/diag.sh
+.claude/scan-test.js
 .claude/proven-config.json
 .claude/.proven-config-version
 .claude-flow/
