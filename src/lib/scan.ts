@@ -72,7 +72,15 @@ export function isReasonableQuad(q: Quad, width: number, height: number): boolea
   if (!isConvex(q)) return false
   if (quadAngles(q).some((a) => a < 40 || a > 140)) return false
   const frac = quadArea(q) / (width * height)
-  return frac >= 0.03 && frac <= 1.0
+  if (frac < 0.03 || frac > 1.0) return false
+  // Strips (a footer band, a ruler) are not pages: cap the aspect ratio and
+  // require a real short side.
+  const [tl, tr, br, bl] = q
+  const wAvg = (dist(tl, tr) + dist(bl, br)) / 2
+  const hAvg = (dist(tl, bl) + dist(tr, br)) / 2
+  const short = Math.min(wAvg, hAvg)
+  if (short < 0.12 * Math.min(width, height)) return false
+  return Math.max(wAvg, hAvg) / Math.max(1, short) <= 5
 }
 
 /** Corners at a small inset from the image edges, used when nothing is detected. */

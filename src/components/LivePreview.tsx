@@ -33,6 +33,8 @@ export function LivePreview({
   const inFlight = useRef(false)
   const queued = useRef<Op[] | null>(null)
   const keyRef = useRef('')
+  /** Key whose source is currently cached in the worker ('' while loading). */
+  const cachedKey = useRef('')
   const down = useRef(false)
 
   useEffect(() => {
@@ -40,12 +42,16 @@ export function LivePreview({
     const worker = getPreviewWorker()
     const key = `${file.id}-live-${++keySeq}`
     keyRef.current = key
+    cachedKey.current = ''
     setReady(false)
     setError(null)
     ;(async () => {
       try {
         await worker.cache(key, file.file, PREVIEW_MAX)
-        if (!cancelled) setReady(true)
+        if (!cancelled) {
+          cachedKey.current = key
+          setReady(true)
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       }
@@ -57,7 +63,9 @@ export function LivePreview({
   }, [file])
 
   useEffect(() => {
-    if (!ready) return
+    // `ready` can still be true from the previous source in the commit where the
+    // file changed; the ref tells whether the *current* key is really cached.
+    if (!ready || cachedKey.current !== keyRef.current) return
     const run = async (o: Op[]) => {
       inFlight.current = true
       const key = keyRef.current
@@ -68,6 +76,7 @@ export function LivePreview({
           canvas.width = bmp.width
           canvas.height = bmp.height
           canvas.getContext('2d')?.drawImage(bmp, 0, 0)
+          setError(null)
         }
         bmp.close()
       } catch (e) {
