@@ -12,6 +12,16 @@ Parameters:
   GitHubRepo:
     Type: String
     Default: ihateimage
+  GitHubOwnerId:
+    Type: String
+    Default: ''
+    Description: >-
+      Numeric owner ID. GitHub's OIDC subject now reads repo:<owner>@<ownerId>/<repo>@<repoId>:...;
+      get both IDs from `gh api users/<owner> -q .id` and `gh api repos/<owner>/<repo> -q .id`.
+  GitHubRepoId:
+    Type: String
+    Default: ''
+    Description: Numeric repository ID (see GitHubOwnerId).
   Branch:
     Type: String
     Default: main
@@ -28,6 +38,9 @@ Parameters:
 Conditions:
   MakeProvider: !Equals [!Ref CreateOidcProvider, 'true']
   HasPolicyArn: !Not [!Equals [!Ref DeployPolicyArn, '']]
+  HasIds: !And
+    - !Not [!Equals [!Ref GitHubOwnerId, '']]
+    - !Not [!Equals [!Ref GitHubRepoId, '']]
 
 Resources:
   GitHubOidcProvider:
@@ -59,11 +72,19 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                # Jobs without an `environment:` present the branch subject; jobs with one present the
-                # environment subject. Trust both so the workflow can use an environment for approvals.
-                token.actions.githubusercontent.com:sub:
-                  - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${Branch}'
-                  - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:environment:production'
+                # GitHub's subject is repo:<owner>@<ownerId>/<repo>@<repoId>:<context> (IDs make it
+                # rename-proof); older tokens omit the IDs. Exact values only: a wildcard after the
+                # owner name would also match look-alike accounts such as notepad104x.
+                # Jobs without an `environment:` present the branch subject; jobs with one present
+                # the environment subject. Both are trusted so approvals can be added later.
+                token.actions.githubusercontent.com:sub: !If
+                  - HasIds
+                  - - !Sub 'repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepo}@${GitHubRepoId}:ref:refs/heads/${Branch}'
+                    - !Sub 'repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepo}@${GitHubRepoId}:environment:production'
+                    - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${Branch}'
+                    - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:environment:production'
+                  - - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${Branch}'
+                    - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:environment:production'
       ManagedPolicyArns:
         - !If
           - HasPolicyArn
