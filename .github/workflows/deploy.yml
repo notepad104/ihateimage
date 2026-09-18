@@ -19,9 +19,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - name: Check configuration
+        env:
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          if [ -z "$ROLE" ]; then
+            echo "::error::Repository variable AWS_DEPLOY_ROLE_ARN is not set. Deploy deploy/aws/github-oidc.yaml and store its RoleArn output (see README, 'Continuous deployment from GitHub')."
+            exit 1
+          fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -32,7 +41,7 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: Assume the deploy role
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-1
@@ -47,9 +56,12 @@ jobs:
         run: bash deploy/aws/deploy.sh
 
       - name: Smoke test
+        env:
+          DOMAIN: ${{ vars.DOMAIN }}
         run: |
-          URL="${{ vars.DOMAIN && format('https://{0}', vars.DOMAIN) || '' }}"
-          if [ -z "$URL" ]; then
+          if [ -n "$DOMAIN" ]; then
+            URL="https://$DOMAIN"
+          else
             URL=$(aws cloudformation describe-stacks --stack-name ihateimage --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='SiteUrl'].OutputValue" --output text)
           fi
           echo "Checking $URL"
