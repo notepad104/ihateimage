@@ -248,17 +248,112 @@ export function warp(img: ImageData, q: Quad, outW: number, outH: number): Image
 // Scan look
 // ---------------------------------------------------------------------------
 
+/** A per-block map over the image with bilinear sampling in pixel space. */
+class BlockMap {
+  readonly bw: number
+  readonly bh: number
+  readonly n: number
+  constructor(
+    readonly B: number,
+    W: number,
+    H: number,
+  ) {
+    this.bw = Math.ceil(W / B)
+    this.bh = Math.ceil(H / B)
+    this.n = this.bw * this.bh
+  }
+  index(x: number, y: number): number {
+    return ((y / this.B) | 0) * this.bw + ((x / this.B) | 0)
+  }
+  sample(map: Float32Array, x: number, y: number): number {
+    const fx = x / this.B - 0.5
+    const fy = y / this.B - 0.5
+    const x0 = Math.max(0, Math.min(this.bw - 1, Math.floor(fx)))
+    const y0 = Math.max(0, Math.min(this.bh - 1, Math.floor(fy)))
+    const x1 = Math.min(this.bw - 1, x0 + 1)
+    const y1 = Math.min(this.bh - 1, y0 + 1)
+    const tx = Math.max(0, Math.min(1, fx - x0))
+    const ty = Math.max(0, Math.min(1, fy - y0))
+    const a = map[y0 * this.bw + x0] * (1 - tx) + map[y0 * this.bw + x1] * tx
+    const b = map[y1 * this.bw + x0] * (1 - tx) + map[y1 * this.bw + x1] * tx
+    return a * (1 - ty) + b * ty
+  }
+  /** Fill blocks flagged invalid from their valid neighbours, growing inwards. */
+  fillHoles(maps: Float32Array[], valid: Uint8Array, fallback: number[]): void {
+    if (!valid.some((v) => v)) {
+      for (let k = 0; k < maps.length; k++) maps[k].fill(fallback[k])
+      return
+    }
+    for (let pass = 0; pass < this.bw + this.bh; pass++) {
+      let changed = false
+      const nextValid = new Uint8Array(valid)
+      for (let y = 0; y < this.bh; y++) {
+        for (let x = 0; x < this.bw; x++) {
+          const b = y * this.bw + x
+          if (valid[b]) continue
+          let n = 0
+          const acc = new Array<number>(maps.length).fill(0)
+          for (let dy = -1; dy <= 1; dy++) {
+            const yy = y + dy
+            if (yy < 0 || yy >= this.bh) continue
+            for (let dx = -1; dx <= 1; dx++) {
+              const xx = x + dx
+              if (xx < 0 || xx >= this.bw) continue
+              const j = yy * this.bw + xx
+              if (!valid[j]) continue
+              n++
+              for (let k = 0; k < maps.length; k++) acc[k] += maps[k][j]
+            }
+          }
+          if (n) {
+            for (let k = 0; k < maps.length; k++) maps[k][b] = acc[k] / n
+            nextValid[b] = 1
+            changed = true
+          }
+        }
+      }
+      valid.set(nextValid)
+      if (!changed) break
+    }
+  }
+  blur(src: Float32Array): Float32Array {
+    const out = new Float32Array(this.n)
+    for (let y = 0; y < this.bh; y++) {
+      for (let x = 0; x < this.bw; x++) {
+        let acc = 0
+        let n = 0
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = y + dy
+          if (yy < 0 || yy >= this.bh) continue
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx
+            if (xx < 0 || xx >= this.bw) continue
+            acc += src[yy * this.bw + xx]
+            n++
+          }
+        }
+        out[y * this.bw + x] = acc / n
+      }
+    }
+    return out
+  }
+}
+
 /**
- * Scanner look, in place. Three stages, all driven by the image itself:
+ * Scanner look, in place: the page comes out as if pressed flat under a
+ * scanner lid. Every stage is driven by the image itself.
  *
- *  1. Illumination map. The paper colour is estimated per block from that
- *     block's bright pixels, blocks without paper (photos, big headlines)
- *     borrow from their brightest neighbour, and the map is smoothed. Dividing
- *     the image by this map removes shadows, vignetting and colour casts:
- *     paper becomes uniformly white, ink and pictures keep their relative tone.
- *  2. Auto exposure. Levels are set from the normalised image's histogram so
- *     ink lands on black and paper on white.
- *  3. Paper cleanup. Faint colour noise on near-white pixels is neutralised.
+ *  1. Coarse illumination map (blocks ≈ 1/40 of the image). The paper colour
+ *     is estimated per block from that block's bright, low-chroma pixels;
+ *     blocks without paper in them (photos, coloured bands, headlines) are
+ *     filled from their neighbours. Dividing by this map removes shadows,
+ *     vignetting and colour casts.
+ *  2. Fine luminance map (blocks ≈ 1/120). Only paper-like pixels of the
+ *     already-normalised image contribute, and the gain is clamped, so it
+ *     flattens creases, folds and ripples without touching ink or pictures.
+ *  3. Auto exposure from the histogram: ink to black, paper to white.
+ *  4. Paper cleanup: residual tint and texture on near-white pixels are
+ *     pushed to flat white.
  *
  * `strength` 0..1 blends between the original and the fully processed pixel.
  */
@@ -268,160 +363,111 @@ export function scanFilter(img: ImageData, strength: number): void {
   const W = img.width
   const H = img.height
   const d = img.data
-  const B = Math.max(8, Math.round(Math.max(W, H) / 40))
-  const bw = Math.ceil(W / B)
-  const bh = Math.ceil(H / B)
-  const nb = bw * bh
+  const longest = Math.max(W, H)
   const lumOf = (r: number, g: number, b: number) => 0.299 * r + 0.587 * g + 0.114 * b
+  const TARGET = 240
 
-  // Pass 1: per-block luminance mean and max.
-  const sum = new Float64Array(nb)
-  const cnt = new Uint32Array(nb)
-  const mx = new Float32Array(nb)
+  // ---- 1. Coarse map -------------------------------------------------------
+  const coarse = new BlockMap(Math.max(8, Math.round(longest / 40)), W, H)
+  const cSum = new Float64Array(coarse.n)
+  const cCnt = new Uint32Array(coarse.n)
+  const cMax = new Float32Array(coarse.n)
   for (let y = 0; y < H; y++) {
-    const by = (y / B) | 0
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4
       const l = lumOf(d[i], d[i + 1], d[i + 2])
-      const b = by * bw + ((x / B) | 0)
-      sum[b] += l
-      cnt[b]++
-      if (l > mx[b]) mx[b] = l
+      const b = coarse.index(x, y)
+      cSum[b] += l
+      cCnt[b]++
+      if (l > cMax[b]) cMax[b] = l
     }
   }
-  const thr = new Float32Array(nb)
-  for (let b = 0; b < nb; b++) {
-    const mean = cnt[b] ? sum[b] / cnt[b] : 0
-    thr[b] = mean + 0.5 * (mx[b] - mean)
+  const cThr = new Float32Array(coarse.n)
+  for (let b = 0; b < coarse.n; b++) {
+    const mean = cCnt[b] ? cSum[b] / cCnt[b] : 0
+    cThr[b] = mean + 0.5 * (cMax[b] - mean)
   }
-
-  // Pass 2: per-block mean colour of the bright ("paper") pixels.
-  const bgR = new Float32Array(nb)
-  const bgG = new Float32Array(nb)
-  const bgB = new Float32Array(nb)
-  const bgN = new Uint32Array(nb)
-  const allR = new Float64Array(nb)
-  const allG = new Float64Array(nb)
-  const allB = new Float64Array(nb)
+  const cR = new Float32Array(coarse.n)
+  const cG = new Float32Array(coarse.n)
+  const cB = new Float32Array(coarse.n)
+  const cN = new Uint32Array(coarse.n)
   for (let y = 0; y < H; y++) {
-    const by = (y / B) | 0
     for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4
-      const b = by * bw + ((x / B) | 0)
       const r = d[i]
       const g = d[i + 1]
       const bl = d[i + 2]
-      allR[b] += r
-      allG[b] += g
-      allB[b] += bl
-      if (lumOf(r, g, bl) >= thr[b]) {
-        bgR[b] += r
-        bgG[b] += g
-        bgB[b] += bl
-        bgN[b]++
+      const b = coarse.index(x, y)
+      // Paper: among the brighter pixels of its block and not strongly coloured.
+      if (lumOf(r, g, bl) >= cThr[b] && Math.max(r, g, bl) - Math.min(r, g, bl) < 70) {
+        cR[b] += r
+        cG[b] += g
+        cB[b] += bl
+        cN[b]++
       }
     }
   }
-  for (let b = 0; b < nb; b++) {
-    if (bgN[b]) {
-      bgR[b] /= bgN[b]
-      bgG[b] /= bgN[b]
-      bgB[b] /= bgN[b]
-    } else if (cnt[b]) {
-      bgR[b] = allR[b] / cnt[b]
-      bgG[b] = allG[b] / cnt[b]
-      bgB[b] = allB[b] / cnt[b]
+  const cValid = new Uint8Array(coarse.n)
+  for (let b = 0; b < coarse.n; b++) {
+    if (cN[b] >= Math.max(8, cCnt[b] * 0.12)) {
+      cR[b] /= cN[b]
+      cG[b] /= cN[b]
+      cB[b] /= cN[b]
+      cValid[b] = 1
     }
   }
+  coarse.fillHoles([cR, cG, cB], cValid, [TARGET, TARGET, TARGET])
+  const mapR = coarse.blur(cR)
+  const mapG = coarse.blur(cG)
+  const mapB = coarse.blur(cB)
+  const gain1 = (bg: number) => Math.min(3.2, Math.max(0.6, TARGET / Math.max(24, bg)))
 
-  // Blocks with no paper in them (a photo, a dark heading) would otherwise be
-  // "corrected" to white: let every block take the brightest paper colour in
-  // its 3×3 neighbourhood, then smooth.
-  const maxFilter = () => {
-    const oR = new Float32Array(nb)
-    const oG = new Float32Array(nb)
-    const oB = new Float32Array(nb)
-    for (let y = 0; y < bh; y++) {
-      for (let x = 0; x < bw; x++) {
-        let best = -1
-        let bi = y * bw + x
-        for (let dy = -1; dy <= 1; dy++) {
-          const yy = y + dy
-          if (yy < 0 || yy >= bh) continue
-          for (let dx = -1; dx <= 1; dx++) {
-            const xx = x + dx
-            if (xx < 0 || xx >= bw) continue
-            const j = yy * bw + xx
-            const l = lumOf(bgR[j], bgG[j], bgB[j])
-            if (l > best) {
-              best = l
-              bi = j
-            }
-          }
-        }
-        oR[y * bw + x] = bgR[bi]
-        oG[y * bw + x] = bgG[bi]
-        oB[y * bw + x] = bgB[bi]
+  // ---- 2. Fine map on the coarse-normalised image --------------------------
+  const fine = new BlockMap(Math.max(4, Math.round(longest / 120)), W, H)
+  const fSum = new Float64Array(fine.n)
+  const fCnt = new Uint32Array(fine.n)
+  const fAll = new Uint32Array(fine.n)
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4
+      const r = d[i] * gain1(coarse.sample(mapR, x, y))
+      const g = d[i + 1] * gain1(coarse.sample(mapG, x, y))
+      const bl = d[i + 2] * gain1(coarse.sample(mapB, x, y))
+      const b = fine.index(x, y)
+      fAll[b]++
+      const l = lumOf(r, g, bl)
+      // Paper-like after coarse correction: near the target, little chroma.
+      if (l >= TARGET * 0.62 && l <= TARGET * 1.3 && Math.max(r, g, bl) - Math.min(r, g, bl) < 45) {
+        fSum[b] += l
+        fCnt[b]++
       }
     }
-    return [oR, oG, oB]
   }
-  const blur = (src: Float32Array) => {
-    const out = new Float32Array(nb)
-    for (let y = 0; y < bh; y++) {
-      for (let x = 0; x < bw; x++) {
-        let acc = 0
-        let n = 0
-        for (let dy = -1; dy <= 1; dy++) {
-          const yy = y + dy
-          if (yy < 0 || yy >= bh) continue
-          for (let dx = -1; dx <= 1; dx++) {
-            const xx = x + dx
-            if (xx < 0 || xx >= bw) continue
-            acc += src[yy * bw + xx]
-            n++
-          }
-        }
-        out[y * bw + x] = acc / n
-      }
+  const fLum = new Float32Array(fine.n)
+  const fValid = new Uint8Array(fine.n)
+  for (let b = 0; b < fine.n; b++) {
+    if (fCnt[b] >= Math.max(4, fAll[b] * 0.25)) {
+      fLum[b] = fSum[b] / fCnt[b]
+      fValid[b] = 1
     }
-    return out
   }
-  const [mR, mG, mB] = maxFilter()
-  const mapR = blur(blur(mR))
-  const mapG = blur(blur(mG))
-  const mapB = blur(blur(mB))
+  fine.fillHoles([fLum], fValid, [TARGET])
+  const fineMap = fine.blur(fLum)
+  const gain2 = (l: number) => Math.min(1.35, Math.max(0.8, TARGET / Math.max(40, l)))
 
-  const TARGET = 240
-  const MAX_GAIN = 3.2
-  const MIN_GAIN = 0.6
-  const sample = (map: Float32Array, fx: number, fy: number) => {
-    const x0 = Math.max(0, Math.min(bw - 1, Math.floor(fx)))
-    const y0 = Math.max(0, Math.min(bh - 1, Math.floor(fy)))
-    const x1 = Math.min(bw - 1, x0 + 1)
-    const y1 = Math.min(bh - 1, y0 + 1)
-    const tx = Math.max(0, Math.min(1, fx - x0))
-    const ty = Math.max(0, Math.min(1, fy - y0))
-    const a = map[y0 * bw + x0] * (1 - tx) + map[y0 * bw + x1] * tx
-    const b = map[y1 * bw + x0] * (1 - tx) + map[y1 * bw + x1] * tx
-    return a * (1 - ty) + b * ty
-  }
-  const gainFor = (bg: number) => Math.min(MAX_GAIN, Math.max(MIN_GAIN, TARGET / Math.max(24, bg)))
-
-  // Pass 3 (subsampled): histogram of normalised luminance for auto levels.
+  // ---- 3. Levels from a subsampled histogram of the normalised image -------
   const BINS = 1024
   const hist = new Uint32Array(BINS)
   let hn = 0
   const step = Math.max(1, Math.round(Math.sqrt((W * H) / 400_000)))
   for (let y = 0; y < H; y += step) {
-    const fy = y / B - 0.5
     for (let x = 0; x < W; x += step) {
-      const fx = x / B - 0.5
       const i = (y * W + x) * 4
+      const g2 = gain2(fine.sample(fineMap, x, y))
       const l = lumOf(
-        d[i] * gainFor(sample(mapR, fx, fy)),
-        d[i + 1] * gainFor(sample(mapG, fx, fy)),
-        d[i + 2] * gainFor(sample(mapB, fx, fy)),
+        d[i] * gain1(coarse.sample(mapR, x, y)) * g2,
+        d[i + 1] * gain1(coarse.sample(mapG, x, y)) * g2,
+        d[i + 2] * gain1(coarse.sample(mapB, x, y)) * g2,
       )
       hist[Math.min(BINS - 1, Math.max(0, Math.round(l * 2)))]++
       hn++
@@ -440,33 +486,36 @@ export function scanFilter(img: ImageData, strength: number): void {
   const white = Math.min(250, Math.max(215, pct(0.92)))
   const scale = 255 / Math.max(1, white - black)
 
-  // Pass 4: normalise, levels, paper cleanup, blend.
+  // ---- 4. Apply: normalise, levels, paper cleanup, blend -------------------
   for (let y = 0; y < H; y++) {
-    const fy = y / B - 0.5
     for (let x = 0; x < W; x++) {
-      const fx = x / B - 0.5
       const i = (y * W + x) * 4
       const r0 = d[i]
       const g0 = d[i + 1]
       const b0 = d[i + 2]
-      let r = (r0 * gainFor(sample(mapR, fx, fy)) - black) * scale
-      let g = (g0 * gainFor(sample(mapG, fx, fy)) - black) * scale
-      let b = (b0 * gainFor(sample(mapB, fx, fy)) - black) * scale
+      const g2 = gain2(fine.sample(fineMap, x, y))
+      let r = (r0 * gain1(coarse.sample(mapR, x, y)) * g2 - black) * scale
+      let g = (g0 * gain1(coarse.sample(mapG, x, y)) * g2 - black) * scale
+      let b = (b0 * gain1(coarse.sample(mapB, x, y)) * g2 - black) * scale
       if (r < 0) r = 0
       else if (r > 255) r = 255
       if (g < 0) g = 0
       else if (g > 255) g = 255
       if (b < 0) b = 0
       else if (b > 255) b = 255
-      // Near-white with little chroma: it is paper, make it neutral.
       const hi = Math.max(r, g, b)
       const lo = Math.min(r, g, b)
       if (hi > 185 && hi - lo < 40) {
+        // Paper: neutralise the tint, then press what is left of the texture to white.
         const grey = (r + g + b) / 3
         const k = 0.85 * (1 - (hi - lo) / 40)
         r += (grey - r) * k
         g += (grey - g) * k
         b += (grey - b) * k
+        const lift = Math.max(0, Math.min(1, (grey - 200) / 45)) * 0.8
+        r += (255 - r) * lift
+        g += (255 - g) * lift
+        b += (255 - b) * lift
       }
       d[i] = r0 + (r - r0) * s
       d[i + 1] = g0 + (g - g0) * s
@@ -957,6 +1006,7 @@ function backgroundMatch(q: Quad, rgb: Uint8ClampedArray, w: number, h: number, 
   const cx = (q[0].x + q[1].x + q[2].x + q[3].x) / 4
   const cy = (q[0].y + q[1].y + q[2].y + q[3].y) / 4
   let total = 0
+  let worst = 1
   for (let s = 0; s < 4; s++) {
     const a = q[s]
     const b = q[(s + 1) % 4]
@@ -981,9 +1031,13 @@ function backgroundMatch(q: Quad, rgb: Uint8ClampedArray, w: number, h: number, 
       const i = (oy * w + ox) * 4
       if (matchesBackground(bg, rgb[i], rgb[i + 1], rgb[i + 2])) hits++
     }
-    total += valid < N / 2 ? 0.5 : hits / valid
+    const side = valid < N / 2 ? 0.5 : hits / valid
+    total += side
+    if (side < worst) worst = side
   }
-  return total / 4
+  // One side facing page content (a header band) should hurt more than the
+  // average alone suggests: every side of a real outline faces background.
+  return 0.6 * (total / 4) + 0.4 * worst
 }
 
 /**
@@ -1255,7 +1309,10 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
   const thr = Math.max(6, percentile(mag, 0.85))
   const longest = Math.max(w, h)
   let cur = quad
-  for (const radius of [Math.max(6, longest * 0.03), Math.max(3, longest * 0.012)]) {
+  // Wide first pass (a coarse seed may sit on a header band's inner edge), then a tight one.
+  for (const radius of [Math.max(8, longest * 0.05), Math.max(3, longest * 0.012)]) {
+    const cx = (cur[0].x + cur[1].x + cur[2].x + cur[3].x) / 4
+    const cy = (cur[0].y + cur[1].y + cur[2].y + cur[3].y) / 4
     const fits: (FitLine | null)[] = []
     for (let s = 0; s < 4; s++) {
       const a = cur[s]
@@ -1267,27 +1324,42 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
       }
       const dir = { x: (b.x - a.x) / len, y: (b.y - a.y) / len }
       const nrm = { x: -dir.y, y: dir.x }
+      // Sign of the normal that points away from the page.
+      const outward = ((a.x + b.x) / 2 - cx) * nrm.x + ((a.y + b.y) / 2 - cy) * nrm.y >= 0 ? 1 : -1
       const N = Math.max(16, Math.min(72, Math.round(len / 5)))
       const hits: Point[] = []
       const R = Math.round(radius)
+      const resp = new Float32Array(2 * R + 1)
       for (let k = 0; k < N; k++) {
         const t = 0.06 + (0.88 * (k + 0.5)) / N
         const px = a.x + dir.x * len * t
         const py = a.y + dir.y * len * t
         let best = 0
-        let bestOff = 0
         for (let o = -R; o <= R; o++) {
           const x = Math.round(px + nrm.x * o)
           const y = Math.round(py + nrm.y * o)
-          if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue
-          const i = y * w + x
-          const resp = Math.abs(gx[i] * nrm.x + gy[i] * nrm.y)
-          if (resp > best) {
-            best = resp
+          let v = 0
+          if (x >= 1 && y >= 1 && x < w - 1 && y < h - 1) {
+            const i = y * w + x
+            v = Math.abs(gx[i] * nrm.x + gy[i] * nrm.y)
+          }
+          resp[o + R] = v
+          if (v > best) best = v
+        }
+        if (best < thr * 0.35) continue
+        // The page edge is the outermost strong edge: content edges (a header
+        // band, a table rule) lie inside it.
+        let bestOff = 0
+        let bestOut = -Infinity
+        for (let o = -R; o <= R; o++) {
+          if (resp[o + R] < best * 0.6) continue
+          const out = o * outward
+          if (out > bestOut) {
+            bestOut = out
             bestOff = o
           }
         }
-        if (best >= thr * 0.35) hits.push({ x: px + nrm.x * bestOff, y: py + nrm.y * bestOff })
+        hits.push({ x: px + nrm.x * bestOff, y: py + nrm.y * bestOff })
       }
       fits.push(fitLine(hits, Math.max(6, Math.round(N * 0.35))))
     }
@@ -1317,6 +1389,8 @@ export interface DetectDebug {
   lines?: Line[]
   scored?: { q: Quad; support: number; contrast: number; bgMatch: number; frac: number; score: number }[]
   truthScore?: { support: number; contrast: number; bgMatch: number; frac: number; score: number }
+  /** Score of the returned quad */
+  bestScore?: number
 }
 
 export function detectQuadClassic(img: ImageData, debug?: DetectDebug): Quad | null {
@@ -1428,5 +1502,6 @@ export function detectQuadClassic(img: ImageData, debug?: DetectDebug): Quad | n
       best = clamped
     }
   }
+  if (debug) debug.bestScore = bestScore
   return bestScore >= 0.3 ? best : null
 }

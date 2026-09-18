@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { applyOps, decode, encode, fromBitmap, prepareOps, releaseOps, resize } from './image-ops'
-import { detectQuadClassic, refineQuad, scaleQuad } from './scan'
+import { detectQuadClassic, refineQuad, scaleQuad, type DetectDebug } from './scan'
 import type { DetectResponse, PreviewResponse, ProcessResponse, Quad, WorkerRequest } from './types'
 
 /** Longest side of the working copy used for page-outline detection. */
@@ -97,14 +97,23 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         const bitmap = await decode(req.source)
         const full = fromBitmap(bitmap)
         bitmap.close()
-        let quad: Quad | null = req.seed ?? null
-        if (!quad) {
-          const small = fitCanvas(full, DETECT_MAX)
-          const found = detectQuadClassic(imageDataOf(small))
-          quad = found ? scaleQuad(found, full.width / small.width, full.height / small.height) : null
+        const small = fitCanvas(full, DETECT_MAX)
+        const sx = small.width / full.width
+        const sy = small.height / full.height
+        const dbg: DetectDebug = {}
+        // Snap the caller's outline first so it competes on equal terms.
+        const seed = req.seed ? refineOnCopy(full, req.seed) : null
+        if (seed) dbg.truth = scaleQuad(seed, sx, sy)
+        const classic = detectQuadClassic(imageDataOf(small), dbg)
+        let quad: Quad | null = seed
+        let source: 'seed' | 'classic' = 'seed'
+        // Keep the seed unless the classic outline is clearly more page-like.
+        const seedScore = dbg.truthScore?.score ?? 0
+        if (classic && (!seed || seedScore < 0.85 * (dbg.bestScore ?? 0))) {
+          quad = refineOnCopy(full, scaleQuad(classic, 1 / sx, 1 / sy))
+          source = 'classic'
         }
-        if (quad) quad = refineOnCopy(full, quad)
-        const res: DetectResponse = { id: req.id, ok: true, quad, width: full.width, height: full.height }
+        const res: DetectResponse = { id: req.id, ok: true, quad, width: full.width, height: full.height, source }
         self.postMessage(res)
         return
       }

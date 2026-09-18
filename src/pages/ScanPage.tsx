@@ -127,8 +127,9 @@ export function ScanPage() {
           })
           setModelCached(true)
           if (quad) {
-            quad = await refineDocumentQuad(file.file, quad)
-            source = 'ai'
+            const refined = await refineDocumentQuad(file.file, quad)
+            quad = refined.quad
+            source = refined.source === 'seed' ? 'ai' : 'fast'
           } else {
             note = 'The AI model did not see a page in this photo. Used the fast detector instead.'
           }
@@ -153,6 +154,7 @@ export function ScanPage() {
         rotation: s[file.id]?.rotation ?? 0,
         busy: false,
         note: quad ? (source === 'fast' && engineRef.current === 'ai' ? note : undefined) : (note ?? 'Could not find the page edges. Drag the corners onto the page.'),
+        // note stays undefined when the fast outline simply out-scored the AI one
       },
     }))
   }, [])

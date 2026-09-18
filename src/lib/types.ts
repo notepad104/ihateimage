@@ -135,7 +135,15 @@ export type PreviewResponse =
   | { id: string; ok: false; error: string }
 
 export type DetectResponse =
-  | { id: string; ok: true; quad: Quad | null; width: number; height: number }
+  | {
+      id: string
+      ok: true
+      quad: Quad | null
+      width: number
+      height: number
+      /** Whether the returned outline came from the caller's seed or from the classic detector. */
+      source: 'seed' | 'classic'
+    }
   | { id: string; ok: false; error: string }
 
 export type WorkerResponse = ProcessResponse | PreviewResponse | DetectResponse

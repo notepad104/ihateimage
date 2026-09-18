@@ -128,10 +128,10 @@ class PreviewWorker {
     void this.send({ kind: 'evict', id: nextId('pv'), key })
   }
 
-  async detect(source: Blob, seed?: Quad): Promise<{ quad: Quad | null; width: number; height: number }> {
+  async detect(source: Blob, seed?: Quad): Promise<{ quad: Quad | null; source: 'seed' | 'classic' }> {
     const res = (await this.send({ kind: 'detect', id: nextId('dt'), source, seed })) as DetectResponse
     if (!res.ok) throw new Error(res.error)
-    return { quad: res.quad, width: res.width, height: res.height }
+    return { quad: res.quad, source: res.source }
   }
 }
 
@@ -148,9 +148,13 @@ export function detectDocumentFast(source: Blob): Promise<Quad | null> {
     .then((r) => r.quad)
 }
 
-/** Snap a rough outline (source pixels) onto the paper edges. */
-export function refineDocumentQuad(source: Blob, quad: Quad): Promise<Quad> {
+/**
+ * Snap a rough outline (source pixels) onto the paper edges. The classic
+ * detector runs as well; when its outline is clearly more page-like it wins,
+ * reported as source 'classic'.
+ */
+export function refineDocumentQuad(source: Blob, quad: Quad): Promise<{ quad: Quad; source: 'seed' | 'classic' }> {
   return getPreviewWorker()
     .detect(source, quad)
-    .then((r) => r.quad ?? quad)
+    .then((r) => ({ quad: r.quad ?? quad, source: r.source }))
 }

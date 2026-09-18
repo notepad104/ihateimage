@@ -71,12 +71,14 @@ export function LivePreview({
         }
         bmp.close()
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        // A render that lost the race against a source switch is not an error;
+        // the new source re-renders on its own once cached.
+        if (keyRef.current === key) setError(e instanceof Error ? e.message : String(e))
       } finally {
         inFlight.current = false
         const next = queued.current
         queued.current = null
-        if (next) void run(next)
+        if (next && keyRef.current === key) void run(next)
       }
     }
     if (inFlight.current) queued.current = ops
