@@ -59,7 +59,11 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${Branch}'
+                # Jobs without an `environment:` present the branch subject; jobs with one present the
+                # environment subject. Trust both so the workflow can use an environment for approvals.
+                token.actions.githubusercontent.com:sub:
+                  - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:ref:refs/heads/${Branch}'
+                  - !Sub 'repo:${GitHubOwner}/${GitHubRepo}:environment:production'
       ManagedPolicyArns:
         - !If
           - HasPolicyArn

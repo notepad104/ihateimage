@@ -17,7 +17,10 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
+    # No `environment:` here on purpose: with one, GitHub's OIDC subject becomes
+    # repo:<owner>/<repo>:environment:<name>, which must also be trusted by the role.
+    # deploy/aws/github-oidc.yaml now trusts both forms, so add
+    # `environment: production` back after redeploying that stack if you want approvals.
     steps:
       - name: Check configuration
         env:
