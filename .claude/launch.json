@@ -14,6 +14,12 @@
       "port": 4173
     },
     {
+      "name": "diag",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "sh .claude/diag.sh 2>&1; npx vite preview --port 4175 --strictPort"],
+      "port": 4175
+    },
+    {
       "name": "commit",
       "runtimeExecutable": "sh",
       "runtimeArgs": [
