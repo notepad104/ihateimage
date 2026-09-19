@@ -150,6 +150,7 @@ export type WorkerResponse = ProcessResponse | PreviewResponse | DetectResponse
 
 export interface LoadedFile {
   id: string
+  /** Bytes the pipeline works on. For SVG input this is a PNG rendering; `type` still says SVG. */
   file: File
   name: string
   size: number

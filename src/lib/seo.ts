@@ -51,7 +51,7 @@ export const HOME_SEO: PageSeo = {
     },
     {
       q: 'Which image formats are supported?',
-      a: 'JPG, PNG, WebP, GIF and BMP as input everywhere, plus AVIF where your browser supports it. Output can be JPG, PNG, WebP or AVIF.',
+      a: 'JPG, PNG, WebP, GIF, BMP and SVG as input everywhere, plus AVIF where your browser supports it. Output can be JPG, PNG, WebP or AVIF.',
     },
     {
       q: 'Does it work offline?',
@@ -128,6 +128,10 @@ export const TOOL_SEO: Record<string, PageSeo> = {
       PRIVACY_FAQ,
       { q: 'WebP or AVIF?', a: 'AVIF is smaller and supports HDR, but encodes slowly and is not supported by very old browsers. WebP is the safe default.' },
       { q: 'Can I convert HEIC photos from my iPhone?', a: 'Safari decodes HEIC natively, so it works there. Other browsers cannot open HEIC yet.' },
+      {
+        q: 'Can I convert SVG to PNG or JPG?',
+        a: 'Yes. An SVG is drawn at its declared size, or at least 1024 px on the long side, and then saved in the format you pick. Use Resize afterwards for an exact pixel size.',
+      },
     ],
     related: ['compress', 'resize', 'metadata'],
   },

@@ -59,7 +59,7 @@ export const TOOLS: ToolDef[] = [
     path: '/convert',
     name: 'Convert format',
     tagline: 'JPG, PNG, WebP and AVIF',
-    description: 'Convert between JPG, PNG, WebP and AVIF. Pick a background color when dropping transparency.',
+    description: 'Convert between JPG, PNG, WebP and AVIF, or turn an SVG into a bitmap. Pick a background color when dropping transparency.',
     icon: FileOutput,
     tint: 'bg-amber-100 text-amber-700',
   },

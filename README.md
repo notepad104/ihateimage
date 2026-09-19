@@ -6,7 +6,7 @@ Live at https://ihateimage.xyz.
 
 ## How it works
 
-- Pixel work runs in Web Workers with OffscreenCanvas on the user's device.
+- Pixel work runs in Web Workers with OffscreenCanvas on the user's device. SVG input is drawn to a bitmap on the page first (workers cannot decode SVG), then flows through the same pipeline.
 - The AI features (background removal, object fill, document corner detection) run on-device through ONNX Runtime Web. Their models download once from Hugging Face and are cached; every model file is pinned by SHA-256.
 - Document scanning finds the page outline (classic edge analysis or the DocAligner model), estimates the page's real proportions from the perspective, warps it flat and whitens the paper.
 - The production bundle ships with a strict Content Security Policy and no third-party scripts.

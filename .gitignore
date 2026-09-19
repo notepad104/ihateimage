@@ -23,6 +23,7 @@ npm-debug.log*
 .claude/diag.sh
 .claude/scan-test.js
 .claude/test-*.webp
+.claude/article.md
 .claude/proven-config.json
 .claude/.proven-config-version
 .claude-flow/

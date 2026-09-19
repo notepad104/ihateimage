@@ -105,7 +105,7 @@ export function DropZone({
               or drop {multiple ? 'files' : 'a file'} here, or paste from your clipboard
             </p>
           </div>
-          <p className="text-xs text-slate-500">JPG, PNG, WebP, AVIF, GIF, BMP · processed on your device</p>
+          <p className="text-xs text-slate-500">JPG, PNG, WebP, AVIF, GIF, BMP, SVG · processed on your device</p>
         </>
       )}
     </div>
