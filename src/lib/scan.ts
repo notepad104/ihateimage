@@ -1447,7 +1447,34 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
   const w = img.width
   const h = img.height
   const { gx, gy, mag } = colorGradient(img, w, h)
+  const gray = toGray(img)
+  const lumAt = (x: number, y: number) => {
+    const xi = Math.max(0, Math.min(w - 1, Math.round(x)))
+    const yi = Math.max(0, Math.min(h - 1, Math.round(y)))
+    return gray[yi * w + xi]
+  }
+  const rgbAt = (x: number, y: number): [number, number, number] => {
+    const xi = Math.max(0, Math.min(w - 1, Math.round(x)))
+    const yi = Math.max(0, Math.min(h - 1, Math.round(y)))
+    const i = (yi * w + xi) * 4
+    return [img.data[i], img.data[i + 1], img.data[i + 2]]
+  }
+  /**
+   * Is `b` the same surface as `a` seen under different light? Compares hue
+   * (channel shares) and allows brightness to drop by half. Paper in a hand's
+   * shadow passes; a blue cloth, a wooden desk or dark ink does not.
+   */
+  const sameSurface = (a: [number, number, number], b: [number, number, number]) => {
+    const sa = a[0] + a[1] + a[2] || 1
+    const sb = b[0] + b[1] + b[2] || 1
+    const hue = Math.abs(a[0] / sa - b[0] / sb) + Math.abs(a[1] / sa - b[1] / sb) + Math.abs(a[2] / sa - b[2] / sb)
+    return hue <= 0.06 && sb >= sa * 0.5 && sb <= sa * 1.25
+  }
   const thr = Math.max(6, percentile(mag, 0.85))
+  // Paper is the bright end of the whole image. Judged globally on purpose: a
+  // coloured band or a shadow next to one side must not redefine "paper".
+  const paperRef = percentile(gray, 0.95)
+  const isPaper = (l: number) => l >= paperRef * 0.9
   const longest = Math.max(w, h)
   let cur = quad
   // Wide first pass (a coarse seed may sit on a header band's inner edge), then a tight one.
@@ -1455,6 +1482,7 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
     const cx = (cur[0].x + cur[1].x + cur[2].x + cur[3].x) / 4
     const cy = (cur[0].y + cur[1].y + cur[2].y + cur[3].y) / 4
     const fits: (FitLine | null)[] = []
+    const pushed = [false, false, false, false]
     for (let s = 0; s < 4; s++) {
       const a = cur[s]
       const b = cur[(s + 1) % 4]
@@ -1467,10 +1495,62 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
       const nrm = { x: -dir.y, y: dir.x }
       // Sign of the normal that points away from the page.
       const outward = ((a.x + b.x) / 2 - cx) * nrm.x + ((a.y + b.y) / 2 - cy) * nrm.y >= 0 ? 1 : -1
+      // Sheet runs out of the frame on this side? Then everything from just
+      // outside the side to the image border is paper, and the side belongs on
+      // the border. Decided before snapping so print can never hold it back.
+      {
+        let paper = 0
+        let total = 0
+        for (let k = 0; k < 12; k++) {
+          const t = 0.1 + (0.8 * (k + 0.5)) / 12
+          const bx = a.x + dir.x * len * t
+          const by = a.y + dir.y * len * t
+          // The paper just inside the side (brightest sample of a short band,
+          // past any ink) is the reference the outside is compared with.
+          let inside: [number, number, number] = [0, 0, 0]
+          for (let j = 1; j <= 5; j++) {
+            const d = longest * 0.006 * j
+            const c = rgbAt(bx - nrm.x * outward * d, by - nrm.y * outward * d)
+            if (c[0] + c[1] + c[2] > inside[0] + inside[1] + inside[2]) inside = c
+          }
+          if (0.299 * inside[0] + 0.587 * inside[1] + 0.114 * inside[2] < paperRef * 0.5) continue
+          // Fine steps: the margin between the side and the border may be narrow.
+          for (let d = longest * 0.01; ; d += longest * 0.015) {
+            const x = bx + nrm.x * outward * d
+            const y = by + nrm.y * outward * d
+            if (x < 0 || y < 0 || x >= w || y >= h) break
+            total++
+            if (sameSurface(inside, rgbAt(x, y))) paper++
+          }
+        }
+        if (total >= 6 && paper / total >= 0.65) {
+          const ox = nrm.x * outward
+          const oy = nrm.y * outward
+          fits.push(
+            Math.abs(ox) > Math.abs(oy)
+              ? { p: { x: ox > 0 ? w : 0, y: 0 }, d: { x: 0, y: 1 } }
+              : { p: { x: 0, y: oy > 0 ? h : 0 }, d: { x: 1, y: 0 } },
+          )
+          pushed[s] = true
+          continue
+        }
+      }
       const N = Math.max(16, Math.min(72, Math.round(len / 5)))
       const hits: Point[] = []
       const R = Math.round(radius)
       const resp = new Float32Array(2 * R + 1)
+      // Paper on a given side of a candidate edge: the brightest sample within a
+      // band 0.6%..3% of the image away. A stroke's own dark pixels sit inside
+      // the band, the paper between lines shows up as the maximum.
+      const bandPaper = (x0: number, y0: number, sx: number, sy: number) => {
+        let m = 0
+        for (let k = 1; k <= 5; k++) {
+          const d = longest * (0.006 * k)
+          const l = lumAt(x0 + sx * d, y0 + sy * d)
+          if (l > m) m = l
+        }
+        return isPaper(m)
+      }
       for (let k = 0; k < N; k++) {
         const t = 0.06 + (0.88 * (k + 0.5)) / N
         const px = a.x + dir.x * len * t
@@ -1483,11 +1563,17 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
           if (x >= 1 && y >= 1 && x < w - 1 && y < h - 1) {
             const i = y * w + x
             v = Math.abs(gx[i] * nrm.x + gy[i] * nrm.y)
+            // An edge with paper on both sides is print, not the page edge.
+            if (v >= thr * 0.3) {
+              const ex = px + nrm.x * o
+              const ey = py + nrm.y * o
+              if (bandPaper(ex, ey, nrm.x * outward, nrm.y * outward) && bandPaper(ex, ey, -nrm.x * outward, -nrm.y * outward)) v = 0
+            }
           }
           resp[o + R] = v
           if (v > best) best = v
         }
-        if (best < thr * 0.35) continue
+        if (best < thr * 0.3) continue
         // The page edge is the outermost strong edge: content edges (a header
         // band, a table rule) lie inside it.
         let bestOff = 0
@@ -1509,7 +1595,9 @@ export function refineQuad(img: ImageData, quad: Quad): Quad {
       const l2 = fits[i]
       if (!l1 || !l2) return c
       const p = intersectFit(l1, l2)
-      if (!p || dist(p, c) > radius * 1.6) return c
+      if (!p) return c
+      // A side moved to the border may carry its corners a long way; otherwise stay local.
+      if (!pushed[(i + 3) % 4] && !pushed[i] && dist(p, c) > radius * 1.6) return c
       return { x: Math.max(0, Math.min(w, p.x)), y: Math.max(0, Math.min(h, p.y)) }
     }) as Quad
     if (isReasonableQuad(next, w, h)) cur = next
