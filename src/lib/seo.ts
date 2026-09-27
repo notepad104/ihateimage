@@ -252,7 +252,7 @@ export const TOOL_SEO: Record<string, PageSeo> = {
       'Merge photos into a single image: side by side, stacked or in a grid. Drag any photo to reorder, resize or crop it, set gaps and background, all in your browser.',
     h1: 'Combine images',
     intro:
-      'Put two or more photos into one picture. Choose a grid, a row or a column and the photos are laid out for you. Then drag any photo to move it, pull its corner to resize it, or open its crop to choose which part shows. Set the sheet size and shape, the gap between photos, rounded corners and a background colour, then save one image or several.',
+      'Put two or more photos into one picture. Choose a grid, a row or a column and the photos are laid out for you. Then drag any photo to move it, pull its corner to resize it, or open its crop and drag the edges of the box to trim it. Set the sheet size and shape, the gap between photos, rounded corners and a background colour, then save one image or several.',
     steps: [
       'Drop the photos you want to combine',
       'Pick a layout: grid, row or column',
@@ -271,7 +271,7 @@ export const TOOL_SEO: Record<string, PageSeo> = {
       },
       {
         q: 'Will my photos be cropped?',
-        a: 'Not unless you want it. “Whole photo” shows each picture entirely, with the background around it. “Fill cell” crops to the frame, centred. Either way you can open a photo’s crop, drag the picture to choose what shows and zoom in.',
+        a: 'Not unless you crop it yourself. Every photo is shown whole inside its frame, with the background around it if the shapes differ. To trim one, select it, press the crop button and drag the edges of the crop box over the photo.',
       },
       {
         q: 'How large is the combined image?',

@@ -8,9 +8,7 @@ import { ToolGuide } from '../components/Seo'
 import { useImageFiles } from '../components/ToolShell'
 import { Button, ColorInput, Field, Notice, NumberInput, SectionTitle, Segmented, Select, Slider, cx } from '../components/ui'
 import {
-  DEFAULT_CROP,
   DEFAULT_SHEET,
-  MAX_ZOOM,
   autoPlacements,
   exportSheet,
   sheetSize,
@@ -255,44 +253,22 @@ export function CollagePage() {
                 <Field label="Photos per image" hint="Split a big batch into several collages. 0 puts everything on one.">
                   <NumberInput value={perSheet} onChange={(v) => setPerSheet(v === '' ? 0 : Math.max(0, Math.floor(v)))} min={0} max={100} />
                 </Field>
-                <Field label="Photo fit" hint={spec.fit === 'contain' ? 'Nothing is cropped unless you crop it; the background shows around photos of a different shape.' : 'Each photo fills its frame, cropped at the centre unless you choose the crop.'}>
-                  <Segmented
-                    value={spec.fit}
-                    onChange={(v) => set('fit', v)}
-                    options={[
-                      { value: 'contain', label: 'Whole photo' },
-                      { value: 'cover', label: 'Fill cell (crop)' },
-                    ]}
-                  />
-                </Field>
               </div>
 
-              {selectedId && (
+              {selectedId && (selectedCrop || adjusted.has(selectedId)) && (
                 <div className="space-y-3">
                   <SectionTitle>Selected photo</SectionTitle>
-                  <Field label="Crop zoom" hint="Magnifies the picture inside its frame. Drag it on the preview to choose what shows.">
-                    <Slider
-                      value={Math.round((selectedCrop?.zoom ?? 1) * 100)}
-                      onChange={(v) => setCrop(selectedId, { ...(selectedCrop ?? DEFAULT_CROP), zoom: v / 100 })}
-                      min={100}
-                      max={MAX_ZOOM * 100}
-                      step={5}
-                      format={(v) => `${(v / 100).toFixed(2)}×`}
-                    />
-                  </Field>
-                  {(selectedCrop || adjusted.has(selectedId)) && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => {
-                        resetPlace(selectedId)
-                        setCrop(selectedId, undefined)
-                      }}
-                    >
-                      Reset frame and crop
-                    </Button>
-                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      resetPlace(selectedId)
+                      setCrop(selectedId, undefined)
+                    }}
+                  >
+                    Reset frame and crop
+                  </Button>
                 </div>
               )}
 

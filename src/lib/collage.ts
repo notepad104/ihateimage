@@ -3,9 +3,6 @@ import { encode, type EncodeResult } from './image-ops'
 
 export type CollageLayout = 'grid' | 'row' | 'column'
 
-/** How a photo sits inside its cell. */
-export type CellFit = 'cover' | 'contain'
-
 export interface SheetSpec {
   layout: CollageLayout
   /** Grid only. Row and column layouts derive it from the photo count. */
@@ -20,8 +17,6 @@ export interface SheetSpec {
   margin: number
   /** Corner radius on each photo, as a fraction of the shorter cell side. */
   radius: number
-  /** Default for photos without their own crop. */
-  fit: CellFit
   /** CSS colour, or 'transparent'. */
   background: string
 }
@@ -40,19 +35,21 @@ export interface Placement extends Rect {
   id: string
 }
 
-/**
- * A user-chosen crop: the photo fills its frame, magnified `zoom` times
- * beyond the fill scale, with the point (cx, cy) of the source (0..1) at the
- * frame centre where possible.
- */
-export interface Crop {
-  zoom: number
-  cx: number
-  cy: number
-}
+/** The part of a photo that is kept, as fractions of its width and height. */
+export type Crop = Rect
 
-export const DEFAULT_CROP: Crop = { zoom: 1, cx: 0.5, cy: 0.5 }
-export const MAX_ZOOM = 4
+export const FULL_CROP: Crop = { x: 0, y: 0, width: 1, height: 1 }
+/** Smallest crop side, as a fraction of the photo. */
+export const MIN_CROP = 0.05
+
+/** Keep a crop inside the photo and no smaller than MIN_CROP on each side. */
+export function clampCrop(c: Crop): Crop {
+  const width = Math.min(1, Math.max(MIN_CROP, c.width))
+  const height = Math.min(1, Math.max(MIN_CROP, c.height))
+  const x = Math.min(1 - width, Math.max(0, c.x))
+  const y = Math.min(1 - height, Math.max(0, c.y))
+  return { x, y, width, height }
+}
 
 export const DEFAULT_SHEET: SheetSpec = {
   layout: 'grid',
@@ -62,7 +59,6 @@ export const DEFAULT_SHEET: SheetSpec = {
   gap: 0.01,
   margin: 0.01,
   radius: 0,
-  fit: 'contain',
   background: '#ffffff',
 }
 
@@ -166,42 +162,23 @@ export function clampPlacement(p: Placement): Placement {
   return { ...p, x, y, width, height }
 }
 
-/**
- * The part of a photo (iw×ih) that shows in a frame of cw×ch when it fills
- * the frame. `crop` magnifies and recentres; the window is kept inside the
- * photo, so panning stops at the edges.
- */
-export function coverWindow(iw: number, ih: number, cw: number, ch: number, crop: Crop = DEFAULT_CROP): Rect {
-  const scale = Math.max(cw / iw, ch / ih) * Math.max(1, crop.zoom)
-  const w = cw / scale
-  const h = ch / scale
-  const x = Math.min(iw - w, Math.max(0, crop.cx * iw - w / 2))
-  const y = Math.min(ih - h, Math.max(0, crop.cy * ih - h / 2))
-  return { x, y, width: w, height: h }
-}
-
-/** Where a whole photo lands inside its frame when nothing is cropped. */
-export function containRect(iw: number, ih: number, cell: Rect): Rect {
-  const scale = Math.min(cell.width / iw, cell.height / ih)
-  const w = iw * scale
-  const h = ih * scale
-  return { x: cell.x + (cell.width - w) / 2, y: cell.y + (cell.height - h) / 2, width: w, height: h }
+/** Where a picture of w×h lands inside a frame, whole and centred. */
+export function containRect(w: number, h: number, cell: Rect): Rect {
+  const scale = Math.min(cell.width / w, cell.height / h)
+  const dw = w * scale
+  const dh = h * scale
+  return { x: cell.x + (cell.width - dw) / 2, y: cell.y + (cell.height - dh) / 2, width: dw, height: dh }
 }
 
 /**
- * How one photo is drawn: the frame it occupies and the source window shown
- * in it. Photos with their own crop always fill the frame; the rest follow
- * the sheet's fit.
+ * How one photo is drawn: the source window (the crop, or the whole photo)
+ * and where it lands in the frame. Nothing is ever cut off beyond the crop
+ * the user drew; the window is shown whole and centred.
  */
-export function photoView(
-  iw: number,
-  ih: number,
-  cell: Rect,
-  fit: CellFit,
-  crop: Crop | undefined,
-): { dest: Rect; src: Rect } {
-  if (!crop && fit === 'contain') return { dest: containRect(iw, ih, cell), src: { x: 0, y: 0, width: iw, height: ih } }
-  return { dest: cell, src: coverWindow(iw, ih, cell.width, cell.height, crop) }
+export function photoView(iw: number, ih: number, cell: Rect, crop: Crop | undefined): { dest: Rect; src: Rect } {
+  const c = crop ?? FULL_CROP
+  const src = { x: c.x * iw, y: c.y * ih, width: c.width * iw, height: c.height * ih }
+  return { dest: containRect(src.width, src.height, cell), src }
 }
 
 type Drawable = CanvasImageSource & { width: number; height: number }
@@ -221,12 +198,11 @@ export function drawCell(
   /** Full source size; `img` may be a downscaled decode of it. */
   source: { width: number; height: number },
   cell: Rect,
-  fit: CellFit,
   crop: Crop | undefined,
   radiusPx: number,
 ) {
   if (source.width <= 0 || source.height <= 0 || cell.width <= 0 || cell.height <= 0) return
-  const { dest, src } = photoView(source.width, source.height, cell, fit, crop)
+  const { dest, src } = photoView(source.width, source.height, cell, crop)
   const k = img.width / source.width
   ctx.save()
   roundedPath(ctx, dest, radiusPx)
@@ -271,7 +247,7 @@ export async function exportSheet(input: ExportInput): Promise<EncodeResult & { 
     const cell: Rect = { x: p.x * W, y: p.y * H, width: p.width * W, height: p.height * H }
     const crop = input.crops[p.id]
     // Decode no larger than the drawn window needs.
-    const { dest, src } = photoView(img.width, img.height, cell, spec.fit, crop)
+    const { dest, src } = photoView(img.width, img.height, cell, crop)
     const scale = Math.min(1, (dest.width / src.width) * 1.05)
     const bitmap = await createImageBitmap(blob, {
       imageOrientation: 'from-image',
@@ -280,7 +256,7 @@ export async function exportSheet(input: ExportInput): Promise<EncodeResult & { 
       resizeQuality: 'high',
     })
     try {
-      drawCell(ctx, bitmap, img, cell, spec.fit, crop, Number.isFinite(radiusPx) ? radiusPx : 0)
+      drawCell(ctx, bitmap, img, cell, crop, Number.isFinite(radiusPx) ? radiusPx : 0)
     } finally {
       bitmap.close()
     }

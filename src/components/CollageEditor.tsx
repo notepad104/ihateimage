@@ -1,6 +1,6 @@
-import { Crop as CropIcon, Move, RotateCcw, X } from 'lucide-react'
+import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { clampPlacement, DEFAULT_CROP, MAX_ZOOM, photoView, type Crop, type Placement, type SheetSpec } from '../lib/collage'
+import { clampCrop, clampPlacement, containRect, FULL_CROP, photoView, type Crop, type Placement, type SheetSpec } from '../lib/collage'
 import type { LoadedFile, Rect } from '../lib/types'
 import { cx } from './ui'
 
@@ -26,14 +26,28 @@ export interface CollageEditorProps {
   onRemove: (id: string) => void
 }
 
+/** Which part of the crop box is being dragged. */
+type CropHandle = 'move' | 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se'
+
 type Drag =
   | { kind: 'move'; id: string; startX: number; startY: number; origin: Placement; over: string | null }
   | { kind: 'resize'; id: string; startX: number; startY: number; origin: Placement }
-  | { kind: 'pan'; id: string; startX: number; startY: number; origin: Crop; srcScale: number }
+  | { kind: 'crop'; id: string; handle: CropHandle; startX: number; startY: number; origin: Crop; photo: Rect }
 
 const NUDGE = 0.01
 /** Dropping a photo on another swaps them only if it was carried mostly onto it. */
 const SWAP_MIN_OVERLAP = 0.5
+
+const CROP_HANDLES: { h: CropHandle; className: string; cursor: string }[] = [
+  { h: 'n', className: 'left-1/2 top-0 h-2 w-8 -translate-x-1/2 -translate-y-1/2', cursor: 'cursor-ns-resize' },
+  { h: 's', className: 'bottom-0 left-1/2 h-2 w-8 -translate-x-1/2 translate-y-1/2', cursor: 'cursor-ns-resize' },
+  { h: 'w', className: 'left-0 top-1/2 h-8 w-2 -translate-x-1/2 -translate-y-1/2', cursor: 'cursor-ew-resize' },
+  { h: 'e', className: 'right-0 top-1/2 h-8 w-2 -translate-y-1/2 translate-x-1/2', cursor: 'cursor-ew-resize' },
+  { h: 'nw', className: 'left-0 top-0 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2', cursor: 'cursor-nwse-resize' },
+  { h: 'se', className: 'bottom-0 right-0 h-3.5 w-3.5 translate-x-1/2 translate-y-1/2', cursor: 'cursor-nwse-resize' },
+  { h: 'ne', className: 'right-0 top-0 h-3.5 w-3.5 -translate-y-1/2 translate-x-1/2', cursor: 'cursor-nesw-resize' },
+  { h: 'sw', className: 'bottom-0 left-0 h-3.5 w-3.5 -translate-x-1/2 translate-y-1/2', cursor: 'cursor-nesw-resize' },
+]
 
 function overlap(a: Rect, b: Rect): number {
   const w = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)
@@ -42,11 +56,30 @@ function overlap(a: Rect, b: Rect): number {
   return (w * h) / (a.width * a.height)
 }
 
+/** Apply a drag of (dx, dy) photo-fractions to a crop box by the given handle. */
+function dragCrop(origin: Crop, handle: CropHandle, dx: number, dy: number): Crop {
+  if (handle === 'move') return clampCrop({ ...origin, x: origin.x + dx, y: origin.y + dy })
+  let { x, y, width, height } = origin
+  const right = x + width
+  const bottom = y + height
+  if (handle.includes('w')) x = Math.min(right - 0.05, Math.max(0, x + dx))
+  if (handle.includes('e')) width = Math.min(1 - x, Math.max(0.05, width + dx))
+  if (handle.includes('n')) y = Math.min(bottom - 0.05, Math.max(0, y + dy))
+  if (handle.includes('s')) height = Math.min(1 - y, Math.max(0.05, height + dy))
+  if (handle.includes('w')) width = right - x
+  if (handle.includes('n')) height = bottom - y
+  return clampCrop({ x, y, width, height })
+}
+
+function isFull(c: Crop): boolean {
+  return c.x <= 0.0005 && c.y <= 0.0005 && c.width >= 0.9995 && c.height >= 0.9995
+}
+
 /**
  * The sheet as it will be exported, drawn with positioned <img> elements so
  * dragging stays cheap. Drag a photo to move it (drop it on another to
- * swap), pull the corner handle to resize, or switch a photo to crop mode
- * and drag the picture inside its frame.
+ * swap), pull the corner handle to resize, or open its crop and drag the
+ * edges of the crop box over the whole photo.
  */
 export function CollageEditor({
   spec,
@@ -109,36 +142,40 @@ export function CollageEditor({
     }
   }
 
+  const framePx = (p: Placement): Rect => ({ x: 0, y: 0, width: p.width * sheetWidth * k, height: p.height * sheetHeight * k })
+
   const startDrag = (e: ReactPointerEvent, p: Placement, kind: 'move' | 'resize') => {
     if (e.button !== 0) return
     e.preventDefault()
     e.stopPropagation()
+    if (cropMode === p.id) return
     capture(e)
     onSelect(p.id)
     const start = toSheet(e.clientX, e.clientY)
-    if (kind === 'move' && cropMode === p.id) {
-      const file = byId.get(p.id)
-      if (!file) return
-      // Preview pixels per source pixel for this photo's current view.
-      const cellPx = { x: 0, y: 0, width: p.width * sheetWidth * k, height: p.height * sheetHeight * k }
-      const { dest, src } = photoView(file.width, file.height, cellPx, spec.fit, crops[p.id] ?? DEFAULT_CROP)
-      setDrag({ kind: 'pan', id: p.id, startX: e.clientX, startY: e.clientY, origin: crops[p.id] ?? DEFAULT_CROP, srcScale: dest.width / src.width })
-      return
-    }
     if (kind === 'resize') setDrag({ kind, id: p.id, startX: start.x, startY: start.y, origin: p })
     else setDrag({ kind: 'move', id: p.id, startX: start.x, startY: start.y, origin: p, over: null })
+  }
+
+  const startCrop = (e: ReactPointerEvent, p: Placement, handle: CropHandle) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    capture(e)
+    const file = byId.get(p.id)
+    if (!file) return
+    // The whole photo, as shown in crop mode, in preview pixels.
+    const photo = containRect(file.width, file.height, framePx(p))
+    if (photo.width <= 0 || photo.height <= 0) return
+    setDrag({ kind: 'crop', id: p.id, handle, startX: e.clientX, startY: e.clientY, origin: crops[p.id] ?? FULL_CROP, photo })
   }
 
   const onMove = (e: ReactPointerEvent) => {
     const d = dragRef.current
     if (!d) return
-    if (d.kind === 'pan') {
-      const file = byId.get(d.id)
-      if (!file) return
-      const dx = (e.clientX - d.startX) / d.srcScale / file.width
-      const dy = (e.clientY - d.startY) / d.srcScale / file.height
-      const crop = { ...d.origin, cx: Math.min(1, Math.max(0, d.origin.cx - dx)), cy: Math.min(1, Math.max(0, d.origin.cy - dy)) }
-      setLiveCrop({ id: d.id, crop })
+    if (d.kind === 'crop') {
+      const dx = (e.clientX - d.startX) / d.photo.width
+      const dy = (e.clientY - d.startY) / d.photo.height
+      setLiveCrop({ id: d.id, crop: dragCrop(d.origin, d.handle, dx, dy) })
       return
     }
     const cur = toSheet(e.clientX, e.clientY)
@@ -166,8 +203,8 @@ export function CollageEditor({
   const endDrag = () => {
     const d = dragRef.current
     if (!d) return
-    if (d.kind === 'pan') {
-      if (liveCrop) onCrop(d.id, liveCrop.crop)
+    if (d.kind === 'crop') {
+      if (liveCrop) onCrop(d.id, isFull(liveCrop.crop) ? undefined : liveCrop.crop)
     } else if (d.kind === 'move' && d.over) {
       onSwap(d.id, d.over)
     } else if (live) {
@@ -178,7 +215,7 @@ export function CollageEditor({
     setLiveCrop(null)
   }
 
-  // Arrow keys nudge the selected photo; in crop mode they pan the picture.
+  // Arrow keys nudge the selected photo; in crop mode they move the crop box.
   useEffect(() => {
     if (!selectedId) return
     const onKey = (e: KeyboardEvent) => {
@@ -190,8 +227,8 @@ export function CollageEditor({
       const step = (e.shiftKey ? 5 : 1) * NUDGE
       e.preventDefault()
       if (cropMode === selectedId) {
-        const c = crops[selectedId] ?? DEFAULT_CROP
-        onCrop(selectedId, { ...c, cx: Math.min(1, Math.max(0, c.cx + dir[0] * step)), cy: Math.min(1, Math.max(0, c.cy + dir[1] * step)) })
+        const next = dragCrop(crops[selectedId] ?? FULL_CROP, 'move', dir[0] * step, dir[1] * step)
+        onCrop(selectedId, isFull(next) ? undefined : next)
         return
       }
       const p = placements.find((x) => x.id === selectedId)
@@ -220,14 +257,6 @@ export function CollageEditor({
           onPointerDown={(e) => {
             if (e.target === e.currentTarget) onSelect(null)
           }}
-          onWheel={(e) => {
-            // Wheel over a photo in crop mode zooms the picture inside its frame.
-            if (!cropMode) return
-            e.preventDefault()
-            const c = crops[cropMode] ?? DEFAULT_CROP
-            const zoom = Math.min(MAX_ZOOM, Math.max(1, c.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08)))
-            onCrop(cropMode, { ...c, zoom })
-          }}
         >
           {placements.map((base) => {
             const file = byId.get(base.id)
@@ -238,11 +267,15 @@ export function CollageEditor({
             const dragging = drag?.id === p.id
             const isTarget = drag?.kind === 'move' && drag.over === p.id
             const cropping = cropMode === p.id
-            // Frame and drawn picture in preview pixels, so radius and crop are exact.
-            const cellPx = { x: 0, y: 0, width: p.width * sheetWidth * k, height: p.height * sheetHeight * k }
-            const { dest, src } = photoView(file.width, file.height, cellPx, spec.fit, crop)
-            const s = dest.width / src.width
-            const radiusPx = spec.radius * Math.min(cellPx.width, cellPx.height)
+            const cellPx = framePx(p)
+            // Normal view: the kept part, whole and centred. Crop mode: the whole photo with the box over it.
+            const view = cropping
+              ? { dest: containRect(file.width, file.height, cellPx), src: { x: 0, y: 0, width: file.width, height: file.height } }
+              : photoView(file.width, file.height, cellPx, crop)
+            const s = view.dest.width / view.src.width
+            const radiusPx = cropping ? 0 : spec.radius * Math.min(cellPx.width, cellPx.height)
+            const box = crop ?? FULL_CROP
+            const pct = (v: number) => `${v * 100}%`
             return (
               <div
                 key={p.id}
@@ -253,29 +286,59 @@ export function CollageEditor({
                 onFocus={() => onSelect(p.id)}
                 className={cx(
                   'absolute outline-none',
-                  cropping ? 'cursor-move' : 'cursor-grab',
-                  dragging && 'z-20 opacity-95',
-                  dragging && !cropping && 'cursor-grabbing',
-                  isTarget && 'z-10',
+                  !cropping && 'cursor-grab',
+                  dragging && 'z-20',
+                  dragging && !cropping && 'cursor-grabbing opacity-95',
+                  (isTarget || cropping) && 'z-10',
                 )}
-                style={{
-                  left: `${p.x * 100}%`,
-                  top: `${p.y * 100}%`,
-                  width: `${p.width * 100}%`,
-                  height: `${p.height * 100}%`,
-                }}
+                style={{ left: pct(p.x), top: pct(p.y), width: pct(p.width), height: pct(p.height) }}
               >
                 <div
                   className="absolute overflow-hidden"
-                  style={{ left: dest.x, top: dest.y, width: dest.width, height: dest.height, borderRadius: radiusPx }}
+                  style={{ left: view.dest.x, top: view.dest.y, width: view.dest.width, height: view.dest.height, borderRadius: radiusPx }}
                 >
                   <img
                     src={file.url}
                     alt=""
                     draggable={false}
                     className="pointer-events-none absolute max-w-none"
-                    style={{ left: -src.x * s, top: -src.y * s, width: file.width * s, height: file.height * s }}
+                    style={{ left: -view.src.x * s, top: -view.src.y * s, width: file.width * s, height: file.height * s }}
                   />
+                  {cropping && (
+                    <>
+                      {/* Darken what will be cut off. */}
+                      <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 bg-slate-900/60"
+                        style={{
+                          clipPath: `polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${pct(box.x)} ${pct(box.y)}, ${pct(box.x)} ${pct(box.y + box.height)}, ${pct(box.x + box.width)} ${pct(box.y + box.height)}, ${pct(box.x + box.width)} ${pct(box.y)}, ${pct(box.x)} ${pct(box.y)})`,
+                        }}
+                      />
+                      <div
+                        role="group"
+                        aria-label="Crop box"
+                        className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+                        style={{ left: pct(box.x), top: pct(box.y), width: pct(box.width), height: pct(box.height) }}
+                        onPointerDown={(e) => startCrop(e, base, 'move')}
+                      >
+                        <div aria-hidden className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-40">
+                          {Array.from({ length: 9 }, (_, i) => (
+                            <div key={i} className="border border-white/70" />
+                          ))}
+                        </div>
+                        {CROP_HANDLES.map(({ h, className, cursor }) => (
+                          <div
+                            key={h}
+                            role="slider"
+                            aria-label={`Crop ${h} edge`}
+                            aria-valuenow={0}
+                            onPointerDown={(e) => startCrop(e, base, h)}
+                            className={cx('absolute rounded-sm border border-slate-700 bg-white shadow', className, cursor)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div
                   aria-hidden
@@ -294,17 +357,15 @@ export function CollageEditor({
                     >
                       <button
                         type="button"
-                        title={cropping ? 'Move the frame' : 'Crop: drag the picture inside its frame'}
+                        title={cropping ? 'Done cropping' : 'Crop: drag the edges of the box over the photo'}
                         aria-pressed={cropping}
                         onClick={(e) => {
                           e.stopPropagation()
-                          // Cropping means filling the frame, so show that straight away.
-                          if (!cropping && !crop) onCrop(p.id, DEFAULT_CROP)
                           setCropMode(cropping ? null : p.id)
                         }}
                         className={cx('rounded p-1 hover:bg-white/20', cropping && 'bg-amber-500 text-slate-900 hover:bg-amber-400')}
                       >
-                        {cropping ? <Move className="h-3.5 w-3.5" /> : <CropIcon className="h-3.5 w-3.5" />}
+                        {cropping ? <Check className="h-3.5 w-3.5" /> : <CropIcon className="h-3.5 w-3.5" />}
                       </button>
                       {(adjusted.has(p.id) || crop) && (
                         <button
@@ -350,8 +411,8 @@ export function CollageEditor({
       </div>
       <p className="text-center text-xs text-slate-500">
         {cropMode
-          ? 'Drag the picture to choose what shows; scroll or use the zoom slider to magnify. Arrow keys pan.'
-          : 'Drag a photo to move it or drop it on another to swap. Pull the corner handle to resize. Use the crop button to choose what shows inside the frame.'}
+          ? 'Drag the edges or corners of the box to choose what to keep, or drag the box to move it. Press the tick when done.'
+          : 'Drag a photo to move it or drop it on another to swap. Pull the corner handle to resize. Use the crop button to trim a photo.'}
       </p>
     </div>
   )
