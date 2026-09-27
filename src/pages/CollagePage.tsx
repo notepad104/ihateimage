@@ -8,12 +8,14 @@ import { ToolGuide } from '../components/Seo'
 import { useImageFiles } from '../components/ToolShell'
 import { Button, ColorInput, Field, Notice, NumberInput, SectionTitle, Segmented, Select, Slider, cx } from '../components/ui'
 import {
+  DEFAULT_CROP,
   DEFAULT_SHEET,
+  MAX_ZOOM,
   autoPlacements,
   exportSheet,
-  fitPlacements,
   sheetSize,
   type CollageLayout,
+  type Crop,
   type Placement,
   type SheetSpec,
 } from '../lib/collage'
@@ -56,7 +58,9 @@ export function CollagePage() {
   const [spec, setSpec] = useState<SheetSpec>(DEFAULT_SHEET)
   const [perSheet, setPerSheet] = useState(0)
   const [order, setOrder] = useState<string[]>([])
-  const [free, setFree] = useState<Record<string, Placement>>({})
+  /** Frames the user moved or resized, by photo id. */
+  const [custom, setCustom] = useState<Record<string, Placement>>({})
+  const [crops, setCrops] = useState<Record<string, Crop | undefined>>({})
   const [sheetIndex, setSheetIndex] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [format, setFormat] = useState<Exclude<FormatChoice, 'same'>>('image/jpeg')
@@ -65,7 +69,11 @@ export function CollagePage() {
   const [jobs, setJobs] = useState<SheetJob[]>([])
   const [zipping, setZipping] = useState(false)
 
-  const set = <K extends keyof SheetSpec>(key: K, value: SheetSpec[K]) => setSpec((s) => ({ ...s, [key]: value }))
+  const set = <K extends keyof SheetSpec>(key: K, value: SheetSpec[K]) => {
+    // Hand-placed frames belong to one arrangement; a new arrangement starts clean.
+    if (key === 'layout' || key === 'columns' || key === 'aspect' || key === 'gap' || key === 'margin') setCustom({})
+    setSpec((s) => ({ ...s, [key]: value }))
+  }
 
   // Keep the photo order in step with the loaded files: new files go to the end, removed ones drop out.
   useEffect(() => {
@@ -85,31 +93,12 @@ export function CollagePage() {
   const current = sheets[safeIndex] ?? []
 
   const placementsFor = useCallback(
-    (imgs: LoadedFile[]): Placement[] => {
-      if (spec.layout !== 'free') return autoPlacements(spec, imgs)
-      // Freeform: keep what the user set; new photos start on a grid position.
-      const seed = autoPlacements({ ...spec, layout: 'grid' }, imgs, sheetSize(spec, imgs))
-      return imgs.map((img, i) => free[img.id] ?? seed[i])
-    },
-    [spec, free],
+    (imgs: LoadedFile[]): Placement[] => autoPlacements(spec, imgs).map((p) => custom[p.id] ?? p),
+    [spec, custom],
   )
 
   const placements = useMemo(() => placementsFor(current), [placementsFor, current])
   const size = useMemo(() => sheetSize(spec, current), [spec, current])
-
-  const changeLayout = (layout: CollageLayout) => {
-    if (layout === 'free' && spec.layout !== 'free') {
-      // Start freeform from where the photos already are.
-      const seeded: Record<string, Placement> = { ...free }
-      const next = { ...spec, layout }
-      for (const sheet of sheets) {
-        const carried = fitPlacements(autoPlacements(spec, sheet), sheetSize(spec, sheet), sheetSize(next, sheet))
-        for (const p of carried) seeded[p.id] = p
-      }
-      setFree(seeded)
-    }
-    set('layout', layout)
-  }
 
   const swap = (a: string, b: string) => {
     setOrder((prev) => {
@@ -123,7 +112,18 @@ export function CollagePage() {
     })
   }
 
-  const place = useCallback((p: Placement) => setFree((prev) => ({ ...prev, [p.id]: p })), [])
+  const place = useCallback((p: Placement) => setCustom((prev) => ({ ...prev, [p.id]: p })), [])
+  const resetPlace = useCallback(
+    (id: string) =>
+      setCustom((prev) => {
+        const { [id]: _drop, ...rest } = prev
+        return rest
+      }),
+    [],
+  )
+  const setCrop = useCallback((id: string, crop: Crop | undefined) => setCrops((prev) => ({ ...prev, [id]: crop })), [])
+  const adjusted = useMemo(() => new Set(Object.keys(custom)), [custom])
+  const selectedCrop = selectedId ? crops[selectedId] : undefined
 
   const remove = (id: string) => {
     files.remove(id)
@@ -144,6 +144,7 @@ export function CollagePage() {
           spec,
           images: imgs,
           placements: placementsFor(imgs),
+          crops,
           sources: new Map(imgs.map((f) => [f.id, f.file])),
           format: format as OutputFormat,
           quality: quality / 100,
@@ -220,10 +221,14 @@ export function CollagePage() {
               sheetHeight={size.height}
               images={current}
               placements={placements}
+              adjusted={adjusted}
+              crops={crops}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSwap={swap}
               onPlace={place}
+              onResetPlace={resetPlace}
+              onCrop={setCrop}
               onRemove={remove}
             />
             <DropZone compact onFiles={(list) => void files.add(list)} busy={files.loading} />
@@ -234,14 +239,14 @@ export function CollagePage() {
                 <SectionTitle>Layout</SectionTitle>
                 <Segmented<CollageLayout>
                   value={spec.layout}
-                  onChange={changeLayout}
+                  onChange={(v) => set('layout', v)}
                   options={[
                     { value: 'grid', label: 'Grid' },
                     { value: 'row', label: 'Row' },
                     { value: 'column', label: 'Column' },
-                    { value: 'free', label: 'Freeform' },
                   ]}
                 />
+                <p className="text-xs text-slate-500">Every photo can still be dragged, resized and cropped on the preview.</p>
                 {spec.layout === 'grid' && (
                   <Field label="Columns">
                     <Slider value={spec.columns} onChange={(v) => set('columns', v)} min={1} max={6} />
@@ -250,7 +255,7 @@ export function CollagePage() {
                 <Field label="Photos per image" hint="Split a big batch into several collages. 0 puts everything on one.">
                   <NumberInput value={perSheet} onChange={(v) => setPerSheet(v === '' ? 0 : Math.max(0, Math.floor(v)))} min={0} max={100} />
                 </Field>
-                <Field label="Photo fit" hint={spec.fit === 'contain' ? 'Nothing is cropped; the background shows around photos of a different shape.' : 'Each photo is cropped, centred, to fill its cell.'}>
+                <Field label="Photo fit" hint={spec.fit === 'contain' ? 'Nothing is cropped unless you crop it; the background shows around photos of a different shape.' : 'Each photo fills its frame, cropped at the centre unless you choose the crop.'}>
                   <Segmented
                     value={spec.fit}
                     onChange={(v) => set('fit', v)}
@@ -261,6 +266,35 @@ export function CollagePage() {
                   />
                 </Field>
               </div>
+
+              {selectedId && (
+                <div className="space-y-3">
+                  <SectionTitle>Selected photo</SectionTitle>
+                  <Field label="Crop zoom" hint="Magnifies the picture inside its frame. Drag it on the preview to choose what shows.">
+                    <Slider
+                      value={Math.round((selectedCrop?.zoom ?? 1) * 100)}
+                      onChange={(v) => setCrop(selectedId, { ...(selectedCrop ?? DEFAULT_CROP), zoom: v / 100 })}
+                      min={100}
+                      max={MAX_ZOOM * 100}
+                      step={5}
+                      format={(v) => `${(v / 100).toFixed(2)}×`}
+                    />
+                  </Field>
+                  {(selectedCrop || adjusted.has(selectedId)) && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        resetPlace(selectedId)
+                        setCrop(selectedId, undefined)
+                      }}
+                    >
+                      Reset frame and crop
+                    </Button>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-3">
                 <SectionTitle>Sheet</SectionTitle>
@@ -353,7 +387,8 @@ export function CollagePage() {
                   onClick={() => {
                     setStage('ready')
                     setJobs([])
-                    setFree({})
+                    setCustom({})
+                    setCrops({})
                     files.clear()
                   }}
                   disabled={stage === 'processing'}

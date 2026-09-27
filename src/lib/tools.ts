@@ -127,9 +127,9 @@ export const TOOLS: ToolDef[] = [
     id: 'collage',
     path: '/combine-images',
     name: 'Combine images',
-    tagline: 'Grid, side by side or freeform',
+    tagline: 'Grid, side by side, your own crop',
     description:
-      'Put several photos into one image. Pick a grid, a row, a column or place them by hand, drag to reorder or resize, set the gap, corners and background, and split a big batch into several sheets.',
+      'Put several photos into one image. Pick a grid, a row or a column, then drag any photo to reorder, resize or crop it. Set the gap, corners and background, and split a big batch into several sheets.',
     icon: LayoutGrid,
     tint: 'bg-lime-100 text-lime-700',
   },
