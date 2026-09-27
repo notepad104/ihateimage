@@ -14,6 +14,7 @@ import {
   GRADIENT_PRESETS,
   MAX_BORDER,
   autoPlacements,
+  autoWidth,
   exportSheet,
   sheetSize,
   type Border,
@@ -42,8 +43,6 @@ const ASPECTS: { label: string; value: number }[] = [
   { label: 'A4 portrait', value: 210 / 297 },
   { label: 'A4 landscape', value: 297 / 210 },
 ]
-
-const WIDTHS = [1080, 1600, 2000, 3000, 4000]
 
 type SheetJob = { status: 'working' } | { status: 'done'; result: ProcessResult } | { status: 'error'; error: string }
 
@@ -120,7 +119,12 @@ export function CollagePage() {
   )
 
   const placements = useMemo(() => placementsFor(current), [placementsFor, current])
-  const size = useMemo(() => sheetSize(spec, current), [spec, current])
+  /** The spec for one sheet, with the output width chosen from its photos. */
+  const specFor = useCallback(
+    (imgs: LoadedFile[]) => ({ ...spec, width: autoWidth(imgs, placementsFor(imgs), crops) }),
+    [spec, placementsFor, crops],
+  )
+  const size = useMemo(() => sheetSize(specFor(current), current), [specFor, current])
 
   const swap = (a: string, b: string) => {
     setOrder((prev) => {
@@ -170,7 +174,7 @@ export function CollagePage() {
       const imgs = sheets[i]
       try {
         const res = await exportSheet({
-          spec,
+          spec: specFor(imgs),
           images: imgs,
           placements: placementsFor(imgs),
           crops,
@@ -346,7 +350,7 @@ export function CollagePage() {
 
               <div className="space-y-3">
                 <SectionTitle>Sheet</SectionTitle>
-                <Field label="Shape">
+                <Field label="Shape" hint={`Output ${size.width} × ${size.height} px, sized so no photo is enlarged.`}>
                   <Select value={String(spec.aspect)} onChange={(e) => set('aspect', Number(e.target.value))}>
                     {ASPECTS.map((a) => (
                       <option key={a.label} value={String(a.value)}>
@@ -354,28 +358,6 @@ export function CollagePage() {
                       </option>
                     ))}
                   </Select>
-                </Field>
-                <Field label="Width" hint={`Output ${size.width} × ${size.height} px`}>
-                  <div className="flex gap-2">
-                    <NumberInput
-                      className="min-w-0 flex-1"
-                      value={spec.width}
-                      onChange={(v) => set('width', v === '' ? 16 : Math.min(8000, Math.max(16, Math.round(v))))}
-                      min={16}
-                      max={8000}
-                      suffix="px"
-                    />
-                    <div className="w-28 shrink-0">
-                      <Select value={WIDTHS.includes(spec.width) ? String(spec.width) : ''} onChange={(e) => e.target.value && set('width', Number(e.target.value))}>
-                        <option value="">Preset</option>
-                        {WIDTHS.map((w) => (
-                          <option key={w} value={String(w)}>
-                            {w}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </div>
                 </Field>
                 <Field label="Gap">
                   <Slider value={Math.round(spec.gap * 1000) / 10} onChange={(v) => set('gap', v / 100)} min={0} max={10} step={0.5} format={(v) => `${v}%`} />

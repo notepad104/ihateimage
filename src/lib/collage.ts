@@ -2,7 +2,7 @@ import type { OutputFormat, Rect } from './types'
 import { encode, type EncodeResult } from './image-ops'
 
 export interface SheetSpec {
-  /** Output width in pixels. */
+  /** Output width in pixels. Chosen automatically; see autoWidth. */
   width: number
   /** width / height. 0 means "let the starting arrangement decide". */
   aspect: number
@@ -108,6 +108,27 @@ export const DEFAULT_SHEET: SheetSpec = {
   margin: 0.01,
   radius: 0,
   background: { kind: 'color', color: '#ffffff' },
+}
+
+export const MIN_WIDTH = 1200
+export const MAX_WIDTH = 4000
+
+/**
+ * Output width for a sheet: just large enough that the biggest photo is
+ * drawn at its own resolution, within sensible bounds. The floor keeps a
+ * batch of thumbnails from producing a tiny collage; the cap keeps the
+ * canvas within memory.
+ */
+export function autoWidth(images: SheetImage[], placements: Placement[], crops: Record<string, Crop | undefined>): number {
+  let need = 0
+  const byId = new Map(images.map((i) => [i.id, i]))
+  for (const p of placements) {
+    const img = byId.get(p.id)
+    if (!img || p.width <= 0) continue
+    const c = crops[p.id]
+    need = Math.max(need, (img.width * (c ? c.width : 1)) / p.width)
+  }
+  return Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, need)))
 }
 
 /** Starting arrangement: the squarest grid that holds every photo. */

@@ -274,7 +274,7 @@ export const TOOL_SEO: Record<string, PageSeo> = {
       },
       {
         q: 'How large is the combined image?',
-        a: 'You choose the width in pixels, up to 8000. The height follows from the shape you pick. Photos are decoded only as large as their cell needs, so even big batches stay light on memory.',
+        a: 'The size is picked for you: wide enough that the largest photo keeps its own resolution, between 1200 and 4000 pixels across, with the height following the shape you choose. Photos are decoded only as large as their cell needs, so even big batches stay light on memory.',
       },
     ],
     related: ['resize', 'aspect', 'compress'],
