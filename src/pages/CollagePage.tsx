@@ -358,20 +358,23 @@ export function CollagePage() {
                 <Field label="Width" hint={`Output ${size.width} × ${size.height} px`}>
                   <div className="flex gap-2">
                     <NumberInput
+                      className="min-w-0 flex-1"
                       value={spec.width}
                       onChange={(v) => set('width', v === '' ? 16 : Math.min(8000, Math.max(16, Math.round(v))))}
                       min={16}
                       max={8000}
                       suffix="px"
                     />
-                    <Select value={WIDTHS.includes(spec.width) ? String(spec.width) : ''} onChange={(e) => e.target.value && set('width', Number(e.target.value))} className="w-28">
-                      <option value="">Preset</option>
-                      {WIDTHS.map((w) => (
-                        <option key={w} value={String(w)}>
-                          {w}
-                        </option>
-                      ))}
-                    </Select>
+                    <div className="w-28 shrink-0">
+                      <Select value={WIDTHS.includes(spec.width) ? String(spec.width) : ''} onChange={(e) => e.target.value && set('width', Number(e.target.value))}>
+                        <option value="">Preset</option>
+                        {WIDTHS.map((w) => (
+                          <option key={w} value={String(w)}>
+                            {w}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
                   </div>
                 </Field>
                 <Field label="Gap">
