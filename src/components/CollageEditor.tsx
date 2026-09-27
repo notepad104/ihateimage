@@ -1,6 +1,6 @@
 import { Check, Crop as CropIcon, RotateCcw, X } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { clampCrop, clampPlacement, containRect, FULL_CROP, photoView, type Border, type Crop, type Placement, type SheetSpec } from '../lib/collage'
+import { backgroundCss, clampCrop, clampPlacement, containRect, FULL_CROP, photoView, type Border, type Crop, type Placement, type SheetSpec } from '../lib/collage'
 import type { LoadedFile, Rect } from '../lib/types'
 import { cx } from './ui'
 
@@ -15,6 +15,8 @@ export interface CollageEditorProps {
   adjusted: Set<string>
   crops: Record<string, Crop | undefined>
   borders: Record<string, Border | undefined>
+  /** Object URL of the background picture, when the sheet uses one. */
+  backgroundUrl?: string | null
   selectedId: string | null
   onSelect: (id: string | null) => void
   /** Photo `a` was dropped on photo `b`: swap their places. */
@@ -89,6 +91,7 @@ export function CollageEditor({
   adjusted,
   crops,
   borders,
+  backgroundUrl,
   selectedId,
   onSelect,
   onSwap,
@@ -212,7 +215,9 @@ export function CollageEditor({
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedId, cropMode, placements, onPlace])
 
-  const transparent = spec.background === 'transparent'
+  const bg = spec.background
+  const transparent = bg.kind === 'color' && bg.color === 'transparent'
+  const bgBlurPx = bg.kind === 'image' ? bg.blur * previewW : 0
 
   return (
     <div className="space-y-2">
@@ -222,7 +227,7 @@ export function CollageEditor({
           className={cx('relative w-full select-none overflow-hidden rounded-lg border border-slate-200 shadow-sm', transparent && 'checker')}
           style={{
             aspectRatio: `${sheetWidth} / ${sheetHeight}`,
-            backgroundColor: transparent ? undefined : spec.background,
+            background: bg.kind === 'image' ? '#ffffff' : backgroundCss(bg),
             touchAction: 'none',
           }}
           onPointerMove={onMove}
@@ -232,6 +237,21 @@ export function CollageEditor({
             if (e.target === e.currentTarget) onSelect(null)
           }}
         >
+          {bg.kind === 'image' && backgroundUrl && (
+            <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+              <img
+                src={backgroundUrl}
+                alt=""
+                className="absolute h-full w-full object-cover"
+                style={
+                  bgBlurPx > 0
+                    ? { filter: `blur(${bgBlurPx}px)`, inset: -bgBlurPx * 2, width: `calc(100% + ${bgBlurPx * 4}px)`, height: `calc(100% + ${bgBlurPx * 4}px)` }
+                    : { inset: 0 }
+                }
+              />
+              {bg.dim > 0 && <div className="absolute inset-0" style={{ backgroundColor: `rgba(0,0,0,${bg.dim})` }} />}
+            </div>
+          )}
           {placements.map((base) => {
             const file = byId.get(base.id)
             if (!file) return null

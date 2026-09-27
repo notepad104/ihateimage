@@ -129,7 +129,7 @@ export const TOOLS: ToolDef[] = [
     name: 'Combine images',
     tagline: 'Arrange, resize and crop freely',
     description:
-      'Put several photos into one image. Drag each photo where you want it, resize it, crop it, give it a coloured border, set the gap, corners and background, and split a big batch into several sheets.',
+      'Put several photos into one image. Drag each photo where you want it, resize it, crop it, give it a coloured border, set the gap and corners, and put a colour, gradient or picture behind everything, and split a big batch into several sheets.',
     icon: LayoutGrid,
     tint: 'bg-lime-100 text-lime-700',
   },

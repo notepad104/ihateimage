@@ -249,13 +249,13 @@ export const TOOL_SEO: Record<string, PageSeo> = {
     toolId: 'collage',
     title: 'Combine Images into One Online, No Upload — ihateimage',
     description:
-      'Merge photos into a single image. Drag each photo where you want it, resize and crop it, add coloured borders, set gaps and background, all in your browser.',
+      'Merge photos into a single image. Drag each photo where you want it, resize and crop it, add coloured borders, and set a colour, gradient or picture as the background, all in your browser.',
     h1: 'Combine images',
     intro:
-      'Put two or more photos into one picture. They start on a grid; from there, drag any photo to move it, drop it on another to swap, pull its corner to resize it, or open its crop and drag the edges of the box to trim it. Give any photo a coloured border and a soft shadow. Set the sheet size and shape, the gap between photos, rounded corners and a background colour, then save one image or several.',
+      'Put two or more photos into one picture. They start on a grid; from there, drag any photo to move it, drop it on another to swap, pull its corner to resize it, or open its crop and drag the edges of the box to trim it. Give any photo a coloured border and a soft shadow. Set the sheet size and shape, the gap between photos, rounded corners, and a solid colour, gradient or picture behind everything, then save one image or several.',
     steps: [
       'Drop the photos you want to combine',
-      'Drag photos to swap, move, resize or crop them, add borders, and set gap, corners and background',
+      'Drag photos to swap, move, resize or crop them, add borders, and set gap, corners and a colour, gradient or picture background',
       'Choose the output size and format, then download the combined image',
     ],
     faqs: [

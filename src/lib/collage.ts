@@ -12,8 +12,33 @@ export interface SheetSpec {
   margin: number
   /** Corner radius on each photo, as a fraction of the shorter cell side. */
   radius: number
-  /** CSS colour, or 'transparent'. */
-  background: string
+  background: SheetBackground
+}
+
+/**
+ * What sits behind the photos. A solid colour (or none), a two-colour
+ * gradient, or a picture that fills the sheet. The picture's bytes live
+ * outside the spec, keyed by the page, so the spec stays plain data.
+ */
+export type SheetBackground =
+  | { kind: 'color'; /** CSS colour, or 'transparent'. */ color: string }
+  | { kind: 'gradient'; from: string; to: string; /** degrees, CSS convention: 0 = bottom to top, 90 = left to right */ angle: number }
+  | { kind: 'image'; /** blur radius as a fraction of the sheet width */ blur: number; /** 0..1 darkening */ dim: number }
+
+export const GRADIENT_PRESETS: { name: string; from: string; to: string }[] = [
+  { name: 'Sunset', from: '#f97316', to: '#db2777' },
+  { name: 'Ocean', from: '#0ea5e9', to: '#6366f1' },
+  { name: 'Mint', from: '#a7f3d0', to: '#38bdf8' },
+  { name: 'Dusk', from: '#1e293b', to: '#7c3aed' },
+  { name: 'Peach', from: '#fde68a', to: '#fb7185' },
+  { name: 'Slate', from: '#f8fafc', to: '#cbd5e1' },
+]
+
+/** CSS for a background that needs no picture; undefined for 'image' and transparent. */
+export function backgroundCss(bg: SheetBackground): string | undefined {
+  if (bg.kind === 'color') return bg.color === 'transparent' ? undefined : bg.color
+  if (bg.kind === 'gradient') return `linear-gradient(${bg.angle}deg, ${bg.from}, ${bg.to})`
+  return undefined
 }
 
 export interface SheetImage {
@@ -82,7 +107,7 @@ export const DEFAULT_SHEET: SheetSpec = {
   gap: 0.01,
   margin: 0.01,
   radius: 0,
-  background: '#ffffff',
+  background: { kind: 'color', color: '#ffffff' },
 }
 
 /** Starting arrangement: the squarest grid that holds every photo. */
@@ -217,10 +242,87 @@ export interface ExportInput {
   placements: Placement[]
   crops: Record<string, Crop | undefined>
   borders: Record<string, Border | undefined>
+  /** Picture for an image background. */
+  backgroundImage?: Blob
   /** Source bytes per image id. */
   sources: Map<string, Blob>
   format: OutputFormat
   quality: number
+}
+
+/**
+ * Paint the sheet background. A transparent colour is left empty unless the
+ * output cannot hold transparency, in which case it becomes white.
+ */
+export async function drawBackground(
+  ctx: OffscreenCanvasRenderingContext2D,
+  W: number,
+  H: number,
+  bg: SheetBackground,
+  picture: Blob | undefined,
+  opaqueOutput: boolean,
+) {
+  if (bg.kind === 'color') {
+    if (bg.color === 'transparent' && !opaqueOutput) return
+    ctx.fillStyle = bg.color === 'transparent' ? '#ffffff' : bg.color
+    ctx.fillRect(0, 0, W, H)
+    return
+  }
+  if (bg.kind === 'gradient') {
+    // CSS angle: 0deg points up, 90deg points right; the line passes through the centre.
+    const a = ((bg.angle - 90) * Math.PI) / 180
+    const half = (Math.abs(W * Math.cos(a)) + Math.abs(H * Math.sin(a))) / 2
+    const cx = W / 2
+    const cy = H / 2
+    const g = ctx.createLinearGradient(cx - Math.cos(a) * half, cy - Math.sin(a) * half, cx + Math.cos(a) * half, cy + Math.sin(a) * half)
+    g.addColorStop(0, bg.from)
+    g.addColorStop(1, bg.to)
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, W, H)
+    return
+  }
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, W, H)
+  if (!picture) return
+  const blurPx = bg.blur * W
+  // Decode only as large as the sheet, and smaller still when it will be blurred anyway.
+  const probe = await createImageBitmap(picture, { imageOrientation: 'from-image' })
+  try {
+    const cover = Math.max(W / probe.width, H / probe.height)
+    const scale = Math.min(1, cover / (blurPx > 0 ? 2 : 1))
+    const bmp =
+      scale < 1
+        ? await createImageBitmap(probe, {
+            resizeWidth: Math.max(1, Math.round(probe.width * scale)),
+            resizeHeight: Math.max(1, Math.round(probe.height * scale)),
+            resizeQuality: 'high',
+          })
+        : probe
+    try {
+      const dw = bmp.width * (cover / scale)
+      const dh = bmp.height * (cover / scale)
+      const dx = (W - dw) / 2
+      const dy = (H - dh) / 2
+      ctx.save()
+      if (blurPx > 0 && 'filter' in ctx) {
+        ctx.filter = `blur(${blurPx}px)`
+        // Overdraw so the blur does not fade towards the edges.
+        const pad = blurPx * 2
+        ctx.drawImage(bmp, dx - pad, dy - pad, dw + 2 * pad, dh + 2 * pad)
+      } else {
+        ctx.drawImage(bmp, dx, dy, dw, dh)
+      }
+      ctx.restore()
+    } finally {
+      if (bmp !== probe) bmp.close()
+    }
+  } finally {
+    probe.close()
+  }
+  if (bg.dim > 0) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${bg.dim})`
+    ctx.fillRect(0, 0, W, H)
+  }
 }
 
 /**
@@ -234,11 +336,7 @@ export async function exportSheet(input: ExportInput): Promise<EncodeResult & { 
   const canvas = new OffscreenCanvas(W, H)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas is not available')
-  const transparent = spec.background === 'transparent' && input.format !== 'image/jpeg'
-  if (!transparent) {
-    ctx.fillStyle = spec.background === 'transparent' ? '#ffffff' : spec.background
-    ctx.fillRect(0, 0, W, H)
-  }
+  await drawBackground(ctx, W, H, spec.background, input.backgroundImage, input.format === 'image/jpeg')
   const radiusPx = spec.radius * Math.min(...placements.map((p) => Math.min(p.width * W, p.height * H)), Infinity)
   const byId = new Map(images.map((i) => [i.id, i]))
   for (const p of placements) {

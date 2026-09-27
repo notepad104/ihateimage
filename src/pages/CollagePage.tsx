@@ -1,16 +1,17 @@
-import { ArrowLeft, Download, Loader2, RotateCcw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, Download, ImagePlus, Loader2, RotateCcw, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CollageEditor } from '../components/CollageEditor'
 import { DropZone } from '../components/DropZone'
 import { FormatPicker, useEncodeSupport, type FormatChoice } from '../components/FormatPicker'
 import { ToolGuide } from '../components/Seo'
 import { useImageFiles } from '../components/ToolShell'
-import { Button, ColorInput, Field, Notice, NumberInput, SectionTitle, Select, Slider, Toggle, cx } from '../components/ui'
+import { Button, ColorInput, Field, Notice, NumberInput, SectionTitle, Segmented, Select, Slider, Toggle, cx } from '../components/ui'
 import {
   BORDER_SWATCHES,
   DEFAULT_BORDER,
   DEFAULT_SHEET,
+  GRADIENT_PRESETS,
   MAX_BORDER,
   autoPlacements,
   exportSheet,
@@ -18,6 +19,7 @@ import {
   type Border,
   type Crop,
   type Placement,
+  type SheetBackground,
   type SheetSpec,
 } from '../lib/collage'
 import { downloadAll, downloadBlob } from '../lib/download'
@@ -63,6 +65,24 @@ export function CollagePage() {
   const [custom, setCustom] = useState<Record<string, Placement>>({})
   const [crops, setCrops] = useState<Record<string, Crop | undefined>>({})
   const [borders, setBorders] = useState<Record<string, Border | undefined>>({})
+  const [bgImage, setBgImage] = useState<{ file: File; url: string } | null>(null)
+  const bgInput = useRef<HTMLInputElement>(null)
+  useEffect(() => () => {
+    if (bgImage) URL.revokeObjectURL(bgImage.url)
+  }, [bgImage])
+  const pickBackground = (file: File | undefined) => {
+    if (!file) return
+    setBgImage({ file, url: URL.createObjectURL(file) })
+    setSpec((s) => ({ ...s, background: s.background.kind === 'image' ? s.background : { kind: 'image', blur: 0, dim: 0 } }))
+  }
+  const bg = spec.background
+  const setBg = (b: SheetBackground) => set('background', b)
+  const bgMode = (kind: SheetBackground['kind']) => {
+    if (kind === bg.kind) return
+    if (kind === 'color') setBg({ kind, color: '#ffffff' })
+    else if (kind === 'gradient') setBg({ kind, ...GRADIENT_PRESETS[0], angle: 135 } as SheetBackground)
+    else setBg({ kind, blur: 0, dim: 0 })
+  }
   const [sheetIndex, setSheetIndex] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [format, setFormat] = useState<Exclude<FormatChoice, 'same'>>('image/jpeg')
@@ -140,7 +160,7 @@ export function CollagePage() {
   }
 
   const lossy = format !== 'image/png'
-  const transparentJpeg = spec.background === 'transparent' && format === 'image/jpeg'
+  const transparentJpeg = bg.kind === 'color' && bg.color === 'transparent' && format === 'image/jpeg'
 
   const run = async () => {
     setStage('processing')
@@ -155,6 +175,7 @@ export function CollagePage() {
           placements: placementsFor(imgs),
           crops,
           borders,
+          backgroundImage: bg.kind === 'image' ? bgImage?.file : undefined,
           sources: new Map(imgs.map((f) => [f.id, f.file])),
           format: format as OutputFormat,
           quality: quality / 100,
@@ -234,6 +255,7 @@ export function CollagePage() {
               adjusted={adjusted}
               crops={crops}
               borders={borders}
+              backgroundUrl={bgImage?.url}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSwap={swap}
@@ -362,8 +384,113 @@ export function CollagePage() {
                   <Slider value={Math.round(spec.radius * 100)} onChange={(v) => set('radius', v / 100)} min={0} max={50} format={(v) => `${v}%`} />
                 </Field>
                 <Field label="Background">
-                  <ColorInput value={spec.background} onChange={(v) => set('background', v)} allowTransparent />
+                  <Segmented<SheetBackground['kind']>
+                    value={bg.kind}
+                    onChange={bgMode}
+                    options={[
+                      { value: 'color', label: 'Solid' },
+                      { value: 'gradient', label: 'Gradient' },
+                      { value: 'image', label: 'Picture' },
+                    ]}
+                  />
                 </Field>
+                {bg.kind === 'color' && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {BORDER_SWATCHES.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          aria-label={`Background colour ${c}`}
+                          onClick={() => setBg({ kind: 'color', color: c })}
+                          className={cx('h-7 w-7 rounded-full border shadow-sm', bg.color.toLowerCase() === c ? 'border-brand-600 ring-2 ring-brand-500/40' : 'border-slate-300')}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                    <ColorInput value={bg.color} onChange={(v) => setBg({ kind: 'color', color: v })} allowTransparent />
+                  </>
+                )}
+                {bg.kind === 'gradient' && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {GRADIENT_PRESETS.map((g) => (
+                        <button
+                          key={g.name}
+                          type="button"
+                          title={g.name}
+                          aria-label={`Gradient ${g.name}`}
+                          onClick={() => setBg({ ...bg, from: g.from, to: g.to })}
+                          className={cx(
+                            'h-7 w-7 rounded-full border shadow-sm',
+                            bg.from === g.from && bg.to === g.to ? 'border-brand-600 ring-2 ring-brand-500/40' : 'border-slate-300',
+                          )}
+                          style={{ background: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
+                        />
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="From">
+                        <ColorInput value={bg.from} onChange={(v) => setBg({ ...bg, from: v })} />
+                      </Field>
+                      <Field label="To">
+                        <ColorInput value={bg.to} onChange={(v) => setBg({ ...bg, to: v })} />
+                      </Field>
+                    </div>
+                    <Field label="Angle">
+                      <Slider value={bg.angle} onChange={(v) => setBg({ ...bg, angle: v })} min={0} max={360} step={5} format={(v) => `${v}°`} />
+                    </Field>
+                  </>
+                )}
+                {bg.kind === 'image' && (
+                  <>
+                    <input
+                      ref={bgInput}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        pickBackground(e.target.files?.[0])
+                        e.target.value = ''
+                      }}
+                    />
+                    {bgImage ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-slate-200 p-2">
+                        <div className="checker h-12 w-12 shrink-0 overflow-hidden rounded-md">
+                          <img src={bgImage.url} alt="Background" className="h-full w-full object-cover" />
+                        </div>
+                        <div className="min-w-0 flex-1 text-xs text-slate-600">
+                          <p className="truncate font-medium text-slate-800">{bgImage.file.name}</p>
+                          <p>Fills the sheet, cropped to fit.</p>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => bgInput.current?.click()}>
+                          Change
+                        </Button>
+                        <button
+                          type="button"
+                          aria-label="Remove background picture"
+                          className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                          onClick={() => {
+                            setBgImage(null)
+                            setBg({ kind: 'color', color: '#ffffff' })
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <Button variant="secondary" className="w-full" onClick={() => bgInput.current?.click()}>
+                        <ImagePlus className="h-4 w-4" /> Choose a picture
+                      </Button>
+                    )}
+                    <Field label="Blur">
+                      <Slider value={Math.round(bg.blur * 1000) / 10} onChange={(v) => setBg({ ...bg, blur: v / 100 })} min={0} max={4} step={0.25} format={(v) => (v === 0 ? 'None' : `${v}%`)} />
+                    </Field>
+                    <Field label="Darken">
+                      <Slider value={Math.round(bg.dim * 100)} onChange={(v) => setBg({ ...bg, dim: v / 100 })} min={0} max={80} step={5} format={(v) => `${v}%`} />
+                    </Field>
+                  </>
+                )}
               </div>
 
               <div className="space-y-3">
