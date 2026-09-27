@@ -1,15 +1,10 @@
 import type { OutputFormat, Rect } from './types'
 import { encode, type EncodeResult } from './image-ops'
 
-export type CollageLayout = 'grid' | 'row' | 'column'
-
 export interface SheetSpec {
-  layout: CollageLayout
-  /** Grid only. Row and column layouts derive it from the photo count. */
-  columns: number
   /** Output width in pixels. */
   width: number
-  /** width / height. 0 means "let the layout decide". */
+  /** width / height. 0 means "let the starting arrangement decide". */
   aspect: number
   /** Gap between photos, as a fraction of the sheet width. */
   gap: number
@@ -39,6 +34,36 @@ export interface Placement extends Rect {
 export type Crop = Rect
 
 export const FULL_CROP: Crop = { x: 0, y: 0, width: 1, height: 1 }
+
+/** A coloured edge around one photo, drawn just outside the picture. */
+export interface Border {
+  /** Thickness as a fraction of the sheet width. */
+  width: number
+  color: string
+  /** Soft drop shadow under the photo. */
+  shadow: boolean
+}
+
+export const DEFAULT_BORDER: Border = { width: 0.01, color: '#ffffff', shadow: false }
+export const MAX_BORDER = 0.04
+
+/** Colours offered as one-tap swatches. */
+export const BORDER_SWATCHES = [
+  '#ffffff',
+  '#0f172a',
+  '#f8e1e7',
+  '#fde68a',
+  '#bbf7d0',
+  '#bae6fd',
+  '#ddd6fe',
+  '#fca5a5',
+  '#f59e0b',
+  '#2563eb',
+]
+
+function inset(r: Rect, d: number): Rect {
+  return { x: r.x + d, y: r.y + d, width: Math.max(0, r.width - 2 * d), height: Math.max(0, r.height - 2 * d) }
+}
 /** Smallest crop side, as a fraction of the photo. */
 export const MIN_CROP = 0.05
 
@@ -52,8 +77,6 @@ export function clampCrop(c: Crop): Crop {
 }
 
 export const DEFAULT_SHEET: SheetSpec = {
-  layout: 'grid',
-  columns: 2,
   width: 2000,
   aspect: 0,
   gap: 0.01,
@@ -62,93 +85,45 @@ export const DEFAULT_SHEET: SheetSpec = {
   background: '#ffffff',
 }
 
-export function gridShape(layout: CollageLayout, columns: number, count: number): { cols: number; rows: number } {
+/** Starting arrangement: the squarest grid that holds every photo. */
+export function gridShape(count: number): { cols: number; rows: number } {
   if (count <= 0) return { cols: 1, rows: 1 }
-  if (layout === 'row') return { cols: count, rows: 1 }
-  if (layout === 'column') return { cols: 1, rows: count }
-  const cols = Math.max(1, Math.min(columns, count))
+  const cols = Math.ceil(Math.sqrt(count))
   return { cols, rows: Math.ceil(count / cols) }
 }
 
 /**
- * Sheet height for the given spec and photo count. With aspect 0 the cells
- * are square, so the height follows from the grid shape.
+ * Sheet height for the given spec and photo count. With aspect 0 the
+ * starting grid has square cells, so the height follows from its shape.
  */
 export function sheetSize(spec: SheetSpec, images: SheetImage[]): { width: number; height: number } {
   const w = Math.max(16, Math.round(spec.width))
   if (spec.aspect > 0) return { width: w, height: Math.max(16, Math.round(w / spec.aspect)) }
-  const { cols, rows } = gridShape(spec.layout, spec.columns, images.length)
-  if (spec.layout !== 'grid' && images.length > 0) {
-    // Rows and columns keep each photo's own shape, so the sheet height comes
-    // from the photos rather than from square cells.
-    const inner = 1 - 2 * spec.margin - spec.gap * (cols - 1)
-    if (spec.layout === 'row') {
-      const sumAspect = images.reduce((s, i) => s + i.width / i.height, 0)
-      const h = inner / sumAspect
-      return { width: w, height: Math.max(16, Math.round(w * (h + 2 * spec.margin))) }
-    }
-    const innerW = 1 - 2 * spec.margin
-    const sumInv = images.reduce((s, i) => s + i.height / i.width, 0)
-    const h = innerW * sumInv + spec.gap * (rows - 1) + 2 * spec.margin
-    return { width: w, height: Math.max(16, Math.round(w * h)) }
-  }
+  const { cols, rows } = gridShape(images.length)
   const cellW = (1 - 2 * spec.margin - spec.gap * (cols - 1)) / cols
   const h = cellW * rows + spec.gap * (rows - 1) + 2 * spec.margin
   return { width: w, height: Math.max(16, Math.round(w * h)) }
 }
 
-/** Automatic placements for a grid, row or column; the user may move and resize photos afterwards. */
-export function autoPlacements(
-  spec: SheetSpec,
-  images: SheetImage[],
-  /** Sheet the placements are for; defaults to the sheet this spec would produce. */
-  size?: { width: number; height: number },
-): Placement[] {
+/**
+ * Starting placements: equal cells on the squarest grid. Every photo can be
+ * moved and resized from here.
+ */
+export function autoPlacements(spec: SheetSpec, images: SheetImage[]): Placement[] {
   const n = images.length
   if (n === 0) return []
-  const { width: W, height: H } = size ?? sheetSize(spec, images)
+  const { width: W, height: H } = sheetSize(spec, images)
   const ar = W / H
-  const { cols, rows } = gridShape(spec.layout, spec.columns, n)
+  const { cols, rows } = gridShape(n)
   const m = spec.margin
   const g = spec.gap
-
-  if (spec.layout === 'row' && spec.aspect === 0 && !size) {
-    // Every photo shares the row height and keeps its own aspect.
-    const innerW = 1 - 2 * m - g * (cols - 1)
-    const sumAspect = images.reduce((s, i) => s + i.width / i.height, 0)
-    const h = innerW / sumAspect
-    let x = m
-    return images.map((img) => {
-      const w = h * (img.width / img.height)
-      const p = { id: img.id, x, y: m * ar, width: w, height: h * ar }
-      x += w + g
-      return p
-    })
-  }
-  if (spec.layout === 'column' && spec.aspect === 0 && !size) {
-    const innerW = 1 - 2 * m
-    let y = m * ar
-    return images.map((img) => {
-      const h = (innerW * (img.height / img.width)) * ar
-      const p = { id: img.id, x: m, y, width: innerW, height: h }
-      y += h + g * ar
-      return p
-    })
-  }
-
-  // Equal cells. Gap and margin are fractions of the width; scale them for y.
+  // Gap and margin are fractions of the width; scale them for y.
   const cellW = (1 - 2 * m - g * (cols - 1)) / cols
   const cellH = (1 - 2 * m * ar - g * ar * (rows - 1)) / rows
   return images.map((img, i) => {
     const c = i % cols
     const r = Math.floor(i / cols)
-    return {
-      id: img.id,
-      x: m + c * (cellW + g),
-      y: m * ar + r * (cellH + g * ar),
-      width: cellW,
-      height: cellH,
-    }
+    return { id: img.id, x: m + c * (cellW + g), y: m * ar + r * (cellH + g * ar), width: cellW, height: cellH }
   })
 }
 
@@ -171,14 +146,22 @@ export function containRect(w: number, h: number, cell: Rect): Rect {
 }
 
 /**
- * How one photo is drawn: the source window (the crop, or the whole photo)
- * and where it lands in the frame. Nothing is ever cut off beyond the crop
- * the user drew; the window is shown whole and centred.
+ * How one photo is drawn: the source window (the crop, or the whole photo),
+ * where the picture lands in the frame, and the outer edge of its border.
+ * The border sits outside the picture but inside the frame, so a thicker
+ * border shrinks the picture rather than spilling over its neighbours.
  */
-export function photoView(iw: number, ih: number, cell: Rect, crop: Crop | undefined): { dest: Rect; src: Rect } {
+export function photoView(
+  iw: number,
+  ih: number,
+  cell: Rect,
+  crop: Crop | undefined,
+  borderPx = 0,
+): { dest: Rect; src: Rect; outer: Rect } {
   const c = crop ?? FULL_CROP
   const src = { x: c.x * iw, y: c.y * ih, width: c.width * iw, height: c.height * ih }
-  return { dest: containRect(src.width, src.height, cell), src }
+  const dest = containRect(src.width, src.height, inset(cell, borderPx))
+  return { dest, src, outer: inset(dest, -borderPx) }
 }
 
 type Drawable = CanvasImageSource & { width: number; height: number }
@@ -200,12 +183,29 @@ export function drawCell(
   cell: Rect,
   crop: Crop | undefined,
   radiusPx: number,
+  border: Border | undefined,
+  /** Sheet width in canvas pixels, to turn the border fraction into pixels. */
+  sheetPx: number,
 ) {
   if (source.width <= 0 || source.height <= 0 || cell.width <= 0 || cell.height <= 0) return
-  const { dest, src } = photoView(source.width, source.height, cell, crop)
+  const bw = border ? border.width * sheetPx : 0
+  const { dest, src, outer } = photoView(source.width, source.height, cell, crop, bw)
   const k = img.width / source.width
+  if (border && (bw > 0 || border.shadow)) {
+    ctx.save()
+    if (border.shadow) {
+      const blur = Math.max(4, Math.min(outer.width, outer.height) * 0.06)
+      ctx.shadowColor = 'rgba(15, 23, 42, 0.35)'
+      ctx.shadowBlur = blur
+      ctx.shadowOffsetY = blur / 3
+    }
+    ctx.fillStyle = bw > 0 ? border.color : 'rgba(0,0,0,0.001)'
+    roundedPath(ctx, outer, radiusPx)
+    ctx.fill()
+    ctx.restore()
+  }
   ctx.save()
-  roundedPath(ctx, dest, radiusPx)
+  roundedPath(ctx, dest, Math.max(0, radiusPx - bw))
   ctx.clip()
   ctx.drawImage(img, src.x * k, src.y * k, src.width * k, src.height * k, dest.x, dest.y, dest.width, dest.height)
   ctx.restore()
@@ -216,6 +216,7 @@ export interface ExportInput {
   images: SheetImage[]
   placements: Placement[]
   crops: Record<string, Crop | undefined>
+  borders: Record<string, Border | undefined>
   /** Source bytes per image id. */
   sources: Map<string, Blob>
   format: OutputFormat
@@ -246,8 +247,9 @@ export async function exportSheet(input: ExportInput): Promise<EncodeResult & { 
     if (!img || !blob) continue
     const cell: Rect = { x: p.x * W, y: p.y * H, width: p.width * W, height: p.height * H }
     const crop = input.crops[p.id]
+    const border = input.borders[p.id]
     // Decode no larger than the drawn window needs.
-    const { dest, src } = photoView(img.width, img.height, cell, crop)
+    const { dest, src } = photoView(img.width, img.height, cell, crop, border ? border.width * W : 0)
     const scale = Math.min(1, (dest.width / src.width) * 1.05)
     const bitmap = await createImageBitmap(blob, {
       imageOrientation: 'from-image',
@@ -256,7 +258,7 @@ export async function exportSheet(input: ExportInput): Promise<EncodeResult & { 
       resizeQuality: 'high',
     })
     try {
-      drawCell(ctx, bitmap, img, cell, crop, Number.isFinite(radiusPx) ? radiusPx : 0)
+      drawCell(ctx, bitmap, img, cell, crop, Number.isFinite(radiusPx) ? radiusPx : 0, border, W)
     } finally {
       bitmap.close()
     }

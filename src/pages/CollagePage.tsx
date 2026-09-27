@@ -6,13 +6,16 @@ import { DropZone } from '../components/DropZone'
 import { FormatPicker, useEncodeSupport, type FormatChoice } from '../components/FormatPicker'
 import { ToolGuide } from '../components/Seo'
 import { useImageFiles } from '../components/ToolShell'
-import { Button, ColorInput, Field, Notice, NumberInput, SectionTitle, Segmented, Select, Slider, cx } from '../components/ui'
+import { Button, ColorInput, Field, Notice, NumberInput, SectionTitle, Select, Slider, Toggle, cx } from '../components/ui'
 import {
+  BORDER_SWATCHES,
+  DEFAULT_BORDER,
   DEFAULT_SHEET,
+  MAX_BORDER,
   autoPlacements,
   exportSheet,
   sheetSize,
-  type CollageLayout,
+  type Border,
   type Crop,
   type Placement,
   type SheetSpec,
@@ -59,6 +62,7 @@ export function CollagePage() {
   /** Frames the user moved or resized, by photo id. */
   const [custom, setCustom] = useState<Record<string, Placement>>({})
   const [crops, setCrops] = useState<Record<string, Crop | undefined>>({})
+  const [borders, setBorders] = useState<Record<string, Border | undefined>>({})
   const [sheetIndex, setSheetIndex] = useState(0)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [format, setFormat] = useState<Exclude<FormatChoice, 'same'>>('image/jpeg')
@@ -69,7 +73,7 @@ export function CollagePage() {
 
   const set = <K extends keyof SheetSpec>(key: K, value: SheetSpec[K]) => {
     // Hand-placed frames belong to one arrangement; a new arrangement starts clean.
-    if (key === 'layout' || key === 'columns' || key === 'aspect' || key === 'gap' || key === 'margin') setCustom({})
+    if (key === 'aspect' || key === 'gap' || key === 'margin') setCustom({})
     setSpec((s) => ({ ...s, [key]: value }))
   }
 
@@ -122,6 +126,13 @@ export function CollagePage() {
   const setCrop = useCallback((id: string, crop: Crop | undefined) => setCrops((prev) => ({ ...prev, [id]: crop })), [])
   const adjusted = useMemo(() => new Set(Object.keys(custom)), [custom])
   const selectedCrop = selectedId ? crops[selectedId] : undefined
+  const selectedBorder = selectedId ? borders[selectedId] : undefined
+  const setBorder = (id: string, b: Border | undefined) => setBorders((prev) => ({ ...prev, [id]: b }))
+  const editBorder = (patch: Partial<Border>) => {
+    if (!selectedId) return
+    const id = selectedId
+    setBorders((prev) => ({ ...prev, [id]: { ...(prev[id] ?? { ...DEFAULT_BORDER, width: 0 }), ...patch } }))
+  }
 
   const remove = (id: string) => {
     files.remove(id)
@@ -143,6 +154,7 @@ export function CollagePage() {
           images: imgs,
           placements: placementsFor(imgs),
           crops,
+          borders,
           sources: new Map(imgs.map((f) => [f.id, f.file])),
           format: format as OutputFormat,
           quality: quality / 100,
@@ -221,6 +233,7 @@ export function CollagePage() {
               placements={placements}
               adjusted={adjusted}
               crops={crops}
+              borders={borders}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onSwap={swap}
@@ -234,41 +247,78 @@ export function CollagePage() {
           <aside className="lg:sticky lg:top-20 lg:self-start">
             <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="space-y-3">
-                <SectionTitle>Layout</SectionTitle>
-                <Segmented<CollageLayout>
-                  value={spec.layout}
-                  onChange={(v) => set('layout', v)}
-                  options={[
-                    { value: 'grid', label: 'Grid' },
-                    { value: 'row', label: 'Row' },
-                    { value: 'column', label: 'Column' },
-                  ]}
-                />
-                <p className="text-xs text-slate-500">Every photo can still be dragged, resized and cropped on the preview.</p>
-                {spec.layout === 'grid' && (
-                  <Field label="Columns">
-                    <Slider value={spec.columns} onChange={(v) => set('columns', v)} min={1} max={6} />
-                  </Field>
+                <SectionTitle>Photos</SectionTitle>
+                <p className="text-xs text-slate-500">
+                  Photos start on a grid. Drag any of them to move it, drop it on another to swap, pull the corner to resize, or use the crop button.
+                </p>
+                {adjusted.size > 0 && (
+                  <Button variant="secondary" size="sm" className="w-full" onClick={() => setCustom({})}>
+                    Tidy up into a grid
+                  </Button>
                 )}
                 <Field label="Photos per image" hint="Split a big batch into several collages. 0 puts everything on one.">
                   <NumberInput value={perSheet} onChange={(v) => setPerSheet(v === '' ? 0 : Math.max(0, Math.floor(v)))} min={0} max={100} />
                 </Field>
               </div>
 
-              {selectedId && (selectedCrop || adjusted.has(selectedId)) && (
+              {selectedId && (
                 <div className="space-y-3">
                   <SectionTitle>Selected photo</SectionTitle>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      resetPlace(selectedId)
-                      setCrop(selectedId, undefined)
-                    }}
-                  >
-                    Reset frame and crop
-                  </Button>
+                  <Field label="Border" hint="A coloured edge around this photo.">
+                    <Slider
+                      value={Math.round((selectedBorder?.width ?? 0) * 400) / 4}
+                      onChange={(v) => editBorder({ width: v / 100 })}
+                      min={0}
+                      max={MAX_BORDER * 100}
+                      step={0.25}
+                      format={(v) => (v === 0 ? 'None' : `${v}%`)}
+                    />
+                  </Field>
+                  {(selectedBorder?.width ?? 0) > 0 && (
+                    <>
+                      <div className="flex flex-wrap gap-1.5">
+                        {BORDER_SWATCHES.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            aria-label={`Border colour ${c}`}
+                            onClick={() => editBorder({ color: c })}
+                            className={cx(
+                              'h-7 w-7 rounded-full border shadow-sm',
+                              selectedBorder?.color.toLowerCase() === c ? 'border-brand-600 ring-2 ring-brand-500/40' : 'border-slate-300',
+                            )}
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </div>
+                      <ColorInput value={selectedBorder?.color ?? DEFAULT_BORDER.color} onChange={(v) => editBorder({ color: v })} />
+                    </>
+                  )}
+                  <Toggle checked={selectedBorder?.shadow ?? false} onChange={(v) => editBorder({ shadow: v })} label="Soft shadow" />
+                  {selectedBorder && files.files.length > 1 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setBorders(Object.fromEntries(files.files.map((f) => [f.id, selectedBorder])))}
+                    >
+                      Use this border on every photo
+                    </Button>
+                  )}
+                  {(selectedCrop || adjusted.has(selectedId) || selectedBorder) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => {
+                        resetPlace(selectedId)
+                        setCrop(selectedId, undefined)
+                        setBorder(selectedId, undefined)
+                      }}
+                    >
+                      Reset this photo
+                    </Button>
+                  )}
                 </div>
               )}
 
@@ -365,6 +415,7 @@ export function CollagePage() {
                     setJobs([])
                     setCustom({})
                     setCrops({})
+                    setBorders({})
                     files.clear()
                   }}
                   disabled={stage === 'processing'}
