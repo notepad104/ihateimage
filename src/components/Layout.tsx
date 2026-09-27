@@ -1,5 +1,5 @@
 import { ChevronDown, ShieldCheck } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { TOOLS } from '../lib/tools'
 import { cx } from './ui'
@@ -21,6 +21,56 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
   )
 
+/** The "More" dropdown: a <details> that also closes on a click anywhere else, on Escape and after picking a tool. */
+function MoreMenu() {
+  const ref = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const close = () => {
+      el.open = false
+    }
+    const onPointerDown = (e: PointerEvent) => {
+      if (el.open && !el.contains(e.target as Node)) close()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && el.open) close()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
+  return (
+    <details ref={ref} className="group relative">
+      <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
+        More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="absolute left-0 top-full z-40 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+        {TOOLS.filter((t) => !MAIN_LINKS.includes(t.id)).map((t) => (
+          <NavLink
+            key={t.id}
+            to={t.path}
+            onClick={() => {
+              if (ref.current) ref.current.open = false
+            }}
+            className={({ isActive }) =>
+              cx(
+                'block rounded-lg px-3 py-2 text-sm',
+                isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-slate-700 hover:bg-slate-100',
+              )
+            }
+          >
+            {t.name}
+          </NavLink>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
@@ -38,27 +88,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 {NAV_LABELS[t.id] ?? t.name}
               </NavLink>
             ))}
-            <details className="group relative">
-              <summary className="flex cursor-pointer list-none items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 [&::-webkit-details-marker]:hidden">
-                More <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="absolute left-0 top-full z-40 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
-                {TOOLS.filter((t) => !MAIN_LINKS.includes(t.id)).map((t) => (
-                  <NavLink
-                    key={t.id}
-                    to={t.path}
-                    className={({ isActive }) =>
-                      cx(
-                        'block rounded-lg px-3 py-2 text-sm',
-                        isActive ? 'bg-brand-50 font-medium text-brand-700' : 'text-slate-700 hover:bg-slate-100',
-                      )
-                    }
-                  >
-                    {t.name}
-                  </NavLink>
-                ))}
-              </div>
-            </details>
+            <MoreMenu />
           </nav>
           <div className="ml-auto flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
             <ShieldCheck className="h-3.5 w-3.5" />
