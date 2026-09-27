@@ -6,7 +6,9 @@ import { BeautifyPage } from './pages/BeautifyPage'
 import { CollagePage } from './pages/CollagePage'
 import { CompressPage } from './pages/CompressPage'
 import { ConvertPage } from './pages/ConvertPage'
+import { FillSignPage } from './pages/FillSignPage'
 import { Home } from './pages/Home'
+import { OcrPage } from './pages/OcrPage'
 import { MetadataPage } from './pages/MetadataPage'
 import { NotFound } from './pages/NotFound'
 import { RemoveBackgroundPage } from './pages/RemoveBackgroundPage'
@@ -33,6 +35,8 @@ export default function App() {
         <Route path="/beautify" element={<BeautifyPage />} />
         <Route path="/remove-objects" element={<RemoveObjectsPage />} />
         <Route path="/combine-images" element={<CollagePage />} />
+        <Route path="/image-to-text" element={<OcrPage />} />
+        <Route path="/fill-and-sign" element={<FillSignPage />} />
         <Route path="/metadata" element={<MetadataPage />} />
         <Route path="/watermark" element={<WatermarkPage />} />
         <Route path="*" element={<NotFound />} />

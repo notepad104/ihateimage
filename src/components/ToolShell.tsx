@@ -132,6 +132,7 @@ export function ToolShell({
       }
     }
     const onDrop = (e: DragEvent) => {
+      if (e.defaultPrevented) return // the drop zone already took it
       const list = filesFromDataTransfer(e.dataTransfer)
       if (list.length) {
         e.preventDefault()

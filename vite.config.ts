@@ -1,6 +1,57 @@
+import { copyFileSync, createReadStream, existsSync, mkdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+const require = createRequire(import.meta.url)
+
+/**
+ * Tesseract (OCR) runs in a classic worker that loads its WebAssembly core by
+ * URL, so those files have to be served from this origin under a stable path
+ * rather than bundled. This plugin serves them from node_modules in dev and
+ * copies them into dist/ocr for the build. The English language file lives in
+ * public/ocr next to them.
+ */
+const OCR_FILES: Record<string, string> = {
+  'worker.min.js': join(dirname(require.resolve('tesseract.js/package.json')), 'dist', 'worker.min.js'),
+  ...Object.fromEntries(
+    ['tesseract-core-lstm', 'tesseract-core-simd-lstm', 'tesseract-core-relaxedsimd-lstm'].flatMap((name) =>
+      ['.wasm.js', '.wasm'].map((ext) => [
+        `${name}${ext}`,
+        join(dirname(require.resolve('tesseract.js-core/package.json')), `${name}${ext}`),
+      ]),
+    ),
+  ),
+}
+
+function ocrAssetsPlugin(): Plugin {
+  let outDir = 'dist'
+  let ssr = false
+  return {
+    name: 'ihateimage-ocr-assets',
+    configResolved(config) {
+      outDir = config.build.outDir
+      ssr = Boolean(config.build.ssr)
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const m = /^\/ocr\/([\w.-]+)$/.exec(req.url?.split('?')[0] ?? '')
+        const file = m && OCR_FILES[m[1]]
+        if (!file || !existsSync(file)) return next()
+        res.setHeader('Content-Type', file.endsWith('.wasm') ? 'application/wasm' : 'text/javascript')
+        createReadStream(file).pipe(res)
+      })
+    },
+    closeBundle() {
+      if (ssr) return
+      const dir = join(outDir, 'ocr')
+      mkdirSync(dir, { recursive: true })
+      for (const [name, file] of Object.entries(OCR_FILES)) copyFileSync(file, join(dir, name))
+    },
+  }
+}
 
 /**
  * Content Security Policy for the production bundle.
@@ -60,7 +111,7 @@ function cspPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), cspPlugin()],
+  plugins: [react(), tailwindcss(), cspPlugin(), ocrAssetsPlugin()],
   worker: {
     format: 'es',
   },

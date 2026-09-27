@@ -1,6 +1,6 @@
 # ihateimage
 
-Free image tools that run entirely in your browser: compress, resize, crop to a ratio, convert, rotate, scan documents from photos, combine photos into one image, beautify, add watermarks, remove objects or backgrounds, and view or strip EXIF and GPS data. Nothing is uploaded. No accounts, no analytics.
+Free image tools that run entirely in your browser: compress, resize, crop to a ratio, convert, rotate, scan documents from photos, combine photos into one image, copy the text out of an image, fill and sign forms, beautify, add watermarks, remove objects or backgrounds, and view or strip EXIF and GPS data. Nothing is uploaded. No accounts, no analytics.
 
 Live at https://ihateimage.xyz.
 
@@ -8,6 +8,7 @@ Live at https://ihateimage.xyz.
 
 - Pixel work runs in Web Workers with OffscreenCanvas on the user's device. SVG input is drawn to a bitmap on the page first (workers cannot decode SVG), then flows through the same pipeline.
 - The AI features (background removal, object fill, document corner detection) run on-device through ONNX Runtime Web. Their models download once from Hugging Face and are cached; every model file is pinned by SHA-256.
+- Text recognition (image to text, and the blank detection behind fill & sign) uses Tesseract compiled to WebAssembly in a Web Worker. The engine and the English language file (~9 MB) are served from this origin under `/ocr/` and cached by the browser; no third-party host is involved.
 - Document scanning finds the page outline (classic edge analysis or the DocAligner model), estimates the page's real proportions from the perspective, warps it flat and whitens the paper.
 - The production bundle ships with a strict Content Security Policy and no third-party scripts.
 - Every route is prerendered to static HTML at build time with its own title, description and structured data, plus a generated sitemap, so search engines see real pages.

@@ -9,6 +9,8 @@ import {
   Minimize2,
   RotateCw,
   ScanLine,
+  ScanText,
+  Signature,
   Sparkles,
   Stamp,
   Wand2,
@@ -132,6 +134,26 @@ export const TOOLS: ToolDef[] = [
       'Put several photos into one image. Drag each photo where you want it, resize it, crop it, give it a coloured border, set the gap and corners, and put a colour, gradient or picture behind everything, and split a big batch into several sheets.',
     icon: LayoutGrid,
     tint: 'bg-lime-100 text-lime-700',
+  },
+  {
+    id: 'ocr',
+    path: '/image-to-text',
+    name: 'Image to text',
+    tagline: 'Copy the words out of a picture',
+    description:
+      'Read the text in screenshots, scans and photos and copy it as plain text. The recogniser runs on your device, so the images stay private.',
+    icon: ScanText,
+    tint: 'bg-indigo-100 text-indigo-700',
+  },
+  {
+    id: 'fill',
+    path: '/fill-and-sign',
+    name: 'Fill & sign',
+    tagline: 'Type into forms, add your signature',
+    description:
+      'Open a photo or scan of a form. The blanks are found for you; click one and type, or draw, type or upload a signature and drop it in place. Nothing is uploaded.',
+    icon: Signature,
+    tint: 'bg-yellow-100 text-yellow-700',
   },
   {
     id: 'metadata',

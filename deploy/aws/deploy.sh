@@ -51,8 +51,11 @@ echo "==> Uploading to s3://$BUCKET"
 # Hashed assets never change: cache for a year.
 aws s3 sync dist/assets "s3://$BUCKET/assets" --region "$REGION" --delete \
   --cache-control "public, max-age=31536000, immutable"
+# OCR engine and language data (~9 MB, unhashed names): cache for a week, revalidate after.
+aws s3 sync dist/ocr "s3://$BUCKET/ocr" --region "$REGION" --delete \
+  --cache-control "public, max-age=604800"
 # HTML, sitemap, manifest, icons: always revalidate.
-aws s3 sync dist "s3://$BUCKET" --region "$REGION" --delete --exclude "assets/*" \
+aws s3 sync dist "s3://$BUCKET" --region "$REGION" --delete --exclude "assets/*" --exclude "ocr/*" \
   --exclude "_headers" --exclude "_redirects" \
   --cache-control "no-cache"
 
@@ -60,6 +63,10 @@ aws s3 sync dist "s3://$BUCKET" --region "$REGION" --delete --exclude "assets/*"
 find dist/assets -name '*.wasm' -print0 | while IFS= read -r -d '' f; do
   aws s3 cp "$f" "s3://$BUCKET/assets/$(basename "$f")" --region "$REGION" \
     --content-type application/wasm --cache-control "public, max-age=31536000, immutable" --only-show-errors
+done
+find dist/ocr -name '*.wasm' -print0 | while IFS= read -r -d '' f; do
+  aws s3 cp "$f" "s3://$BUCKET/ocr/$(basename "$f")" --region "$REGION" \
+    --content-type application/wasm --cache-control "public, max-age=604800" --only-show-errors
 done
 aws s3 cp dist/manifest.webmanifest "s3://$BUCKET/manifest.webmanifest" --region "$REGION" \
   --content-type application/manifest+json --cache-control "no-cache" --only-show-errors

@@ -41,7 +41,7 @@ export const HOME_SEO: PageSeo = {
     'Compress, resize, crop, convert, watermark and clean up photos 100% in your browser. Free image editor with no uploads, no sign-up and no tracking.',
   h1: 'Every tool you need to work with images, without giving them away',
   intro:
-    'ihateimage is a free online image editor that never uploads your files. Compress and resize photos, crop to any aspect ratio, convert between JPG, PNG, WebP and AVIF, scan documents from photos, combine photos into one image, remove backgrounds and objects, add watermarks and strip GPS metadata, all on your own device.',
+    'ihateimage is a free online image editor that never uploads your files. Compress and resize photos, crop to any aspect ratio, convert between JPG, PNG, WebP and AVIF, scan documents from photos, combine photos into one image, copy the text out of a picture, fill and sign forms, remove backgrounds and objects, add watermarks and strip GPS metadata, all on your own device.',
   steps: ['Pick a tool', 'Drop your images, even hundreds at once', 'Adjust the settings with a live preview', 'Download the results or a ZIP'],
   faqs: [
     PRIVACY_FAQ,
@@ -278,6 +278,77 @@ export const TOOL_SEO: Record<string, PageSeo> = {
       },
     ],
     related: ['resize', 'aspect', 'compress'],
+  },
+  ocr: {
+    path: '/image-to-text',
+    toolId: 'ocr',
+    title: 'Image to Text (OCR) Online, No Upload — ihateimage',
+    description:
+      'Copy the text out of screenshots, scans and photos. Free OCR that runs in your browser: drop images, read the text, copy or save it. Nothing is uploaded.',
+    h1: 'Image to text',
+    intro:
+      'Turn a picture of text into text you can copy: screenshots, scanned pages, photos of documents, receipts and signs. The recogniser runs on your device, so the images never leave it. Drop several images at once and copy them together or one at a time, as separate lines or flowed into paragraphs.',
+    steps: [
+      'Drop screenshots, scans or photos, or paste one from the clipboard',
+      'Wait a moment while the text is read on your device',
+      'Copy the text, or save all of it as a .txt file',
+    ],
+    faqs: [
+      PRIVACY_FAQ,
+      {
+        q: 'How accurate is it?',
+        a: 'Printed text in a sharp, straight image is read very reliably. Handwriting, tiny text, heavy skew and blurry photos lower the accuracy; a confidence score is shown for each image so you know when to check the result.',
+      },
+      {
+        q: 'Which languages are supported?',
+        a: 'English for now. Numbers and punctuation are read in any document.',
+      },
+      {
+        q: 'Why is there a download the first time?',
+        a: 'The recogniser (Tesseract, compiled to WebAssembly) and its language file are about 9 MB. They are fetched once from this site and kept in your browser, so later images are read without any download.',
+      },
+      {
+        q: 'Can I keep the layout?',
+        a: 'Choose “As in the image” to keep one line of text per line in the picture, or “Flow into paragraphs” to join the lines of each paragraph, which pastes cleanly into a document.',
+      },
+    ],
+    related: ['fill', 'scan', 'metadata'],
+  },
+  fill: {
+    path: '/fill-and-sign',
+    toolId: 'fill',
+    title: 'Fill and Sign a Form Image Online, No Upload — ihateimage',
+    description:
+      'Type into a photo or scan of a form and add your signature. The blanks are detected automatically; draw, type or upload a signature. Runs in your browser.',
+    h1: 'Fill & sign',
+    intro:
+      'Open a photo or scan of a form. The text is read on your device and the blanks (underlines, boxes, dotted lines and space after labels) are outlined in blue. Click one and type; the text is sized to fit. Add a signature by drawing it, typing your name in a script style or uploading a photo of it, then drag it onto the signature line. Download the finished form as JPG, PNG or WebP.',
+    steps: [
+      'Drop a photo or scan of the form',
+      'Click a highlighted blank and type, or double-click anywhere to add text',
+      'Add a signature: draw it, type it or upload a picture of it, then drag it into place',
+      'Download the filled form',
+    ],
+    faqs: [
+      PRIVACY_FAQ,
+      {
+        q: 'How are the blanks found?',
+        a: 'The page is read with on-device text recognition, then long horizontal rules, empty boxes, runs of underscores or dots, and empty space after a label ending in a colon are treated as blanks. If one is missed, double-click where you want to write.',
+      },
+      {
+        q: 'Can I sign with my finger?',
+        a: 'Yes. Choose “Add signature”, draw on the pad with a finger, pen or mouse and press “Use this signature”. You can also type your name in a handwriting style, or upload a photo of your signature and the paper behind it is made transparent.',
+      },
+      {
+        q: 'Does this work with PDF forms?',
+        a: 'Not directly. Export or screenshot the PDF page as an image first, fill it here, and the result is an image you can print or attach.',
+      },
+      {
+        q: 'Is the output quality reduced?',
+        a: 'The text and signature are drawn onto the image at its full resolution. Choose PNG to avoid any compression, or JPG and WebP with the quality slider for a smaller file.',
+      },
+    ],
+    related: ['ocr', 'scan', 'watermark'],
   },
   metadata: {
     path: '/metadata',
