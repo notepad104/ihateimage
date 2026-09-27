@@ -1,6 +1,6 @@
 # ihateimage
 
-Free image tools that run entirely in your browser: compress, resize, crop to a ratio, convert, rotate, scan documents from photos, beautify, add watermarks, remove objects or backgrounds, and view or strip EXIF and GPS data. Nothing is uploaded. No accounts, no analytics.
+Free image tools that run entirely in your browser: compress, resize, crop to a ratio, convert, rotate, scan documents from photos, combine photos into one image, beautify, add watermarks, remove objects or backgrounds, and view or strip EXIF and GPS data. Nothing is uploaded. No accounts, no analytics.
 
 Live at https://ihateimage.xyz.
 

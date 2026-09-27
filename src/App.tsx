@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { useSeo } from './components/Seo'
 import { AspectRatioPage } from './pages/AspectRatioPage'
 import { BeautifyPage } from './pages/BeautifyPage'
+import { CollagePage } from './pages/CollagePage'
 import { CompressPage } from './pages/CompressPage'
 import { ConvertPage } from './pages/ConvertPage'
 import { Home } from './pages/Home'
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="/remove-background" element={<RemoveBackgroundPage />} />
         <Route path="/beautify" element={<BeautifyPage />} />
         <Route path="/remove-objects" element={<RemoveObjectsPage />} />
+        <Route path="/combine-images" element={<CollagePage />} />
         <Route path="/metadata" element={<MetadataPage />} />
         <Route path="/watermark" element={<WatermarkPage />} />
         <Route path="*" element={<NotFound />} />

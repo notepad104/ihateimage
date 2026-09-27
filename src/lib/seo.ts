@@ -41,7 +41,7 @@ export const HOME_SEO: PageSeo = {
     'Compress, resize, crop, convert, watermark and clean up photos 100% in your browser. Free image editor with no uploads, no sign-up and no tracking.',
   h1: 'Every tool you need to work with images, without giving them away',
   intro:
-    'ihateimage is a free online image editor that never uploads your files. Compress and resize photos, crop to any aspect ratio, convert between JPG, PNG, WebP and AVIF, scan documents from photos, remove backgrounds and objects, add watermarks and strip GPS metadata, all on your own device.',
+    'ihateimage is a free online image editor that never uploads your files. Compress and resize photos, crop to any aspect ratio, convert between JPG, PNG, WebP and AVIF, scan documents from photos, combine photos into one image, remove backgrounds and objects, add watermarks and strip GPS metadata, all on your own device.',
   steps: ['Pick a tool', 'Drop your images, even hundreds at once', 'Adjust the settings with a live preview', 'Download the results or a ZIP'],
   faqs: [
     PRIVACY_FAQ,
@@ -243,6 +243,42 @@ export const TOOL_SEO: Record<string, PageSeo> = {
       { q: 'Will the watermark be the same size on portrait and landscape photos?', a: 'Yes. Size and position are stored relative to each image, so the batch looks consistent.' },
     ],
     related: ['compress', 'resize', 'metadata'],
+  },
+  collage: {
+    path: '/combine-images',
+    toolId: 'collage',
+    title: 'Combine Images into One Online, No Upload — ihateimage',
+    description:
+      'Merge photos into a single image: side by side, stacked, in a grid or placed freely. Drag to reorder or resize, set gaps and background, all in your browser.',
+    h1: 'Combine images',
+    intro:
+      'Put two or more photos into one picture. Choose a grid, a row or a column and the photos are laid out for you, or switch to freeform and drag each one where you want it. Set the sheet size and shape, the gap between photos, rounded corners and a background colour, then save one image or several.',
+    steps: [
+      'Drop the photos you want to combine',
+      'Pick a layout: grid, row, column or freeform',
+      'Drag photos to swap, move or resize them, and set gap, corners and background',
+      'Choose the output size and format, then download the combined image',
+    ],
+    faqs: [
+      PRIVACY_FAQ,
+      {
+        q: 'How do I put two photos side by side?',
+        a: 'Drop both photos and choose the Row layout. Each photo keeps its own proportions and shares the same height. Pick Column to stack them instead.',
+      },
+      {
+        q: 'Can I make several collages at once?',
+        a: 'Yes. Set “Photos per image” to, say, 4 and a batch of 12 photos becomes three collages, which you can download together as a ZIP.',
+      },
+      {
+        q: 'Will my photos be cropped?',
+        a: '“Fill cell” crops each photo to fill its space, centred. “Whole photo” shrinks it to fit with the background showing around it. Freeform lets you resize each photo yourself.',
+      },
+      {
+        q: 'How large is the combined image?',
+        a: 'You choose the width in pixels, up to 8000. The height follows from the shape you pick. Photos are decoded only as large as their cell needs, so even big batches stay light on memory.',
+      },
+    ],
+    related: ['resize', 'aspect', 'compress'],
   },
   metadata: {
     path: '/metadata',

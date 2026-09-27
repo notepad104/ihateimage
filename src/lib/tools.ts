@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react'
 import {
   Crop,
   Eraser,
+  LayoutGrid,
   FileOutput,
   MapPinOff,
   Maximize2,
@@ -121,6 +122,16 @@ export const TOOLS: ToolDef[] = [
       'Stamp text or your logo on photos. Pick a corner, drag it into place, or tile it across the image. Same relative size on every photo.',
     icon: Stamp,
     tint: 'bg-cyan-100 text-cyan-700',
+  },
+  {
+    id: 'collage',
+    path: '/combine-images',
+    name: 'Combine images',
+    tagline: 'Grid, side by side or freeform',
+    description:
+      'Put several photos into one image. Pick a grid, a row, a column or place them by hand, drag to reorder or resize, set the gap, corners and background, and split a big batch into several sheets.',
+    icon: LayoutGrid,
+    tint: 'bg-lime-100 text-lime-700',
   },
   {
     id: 'metadata',
